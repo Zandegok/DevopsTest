@@ -34,6 +34,10 @@ run_check bookinfo bash -c 'assert_http "$(bookinfo_url)" 200 8000'
 if [[ -f "$ROOT_DIR/.low-memory" ]]; then
   log_info "Low-memory VM detected ($(cat "$ROOT_DIR/.low-memory") MB) — Grafana check uses extended timeout"
   run_check grafana bash -c 'assert_http "$(grafana_url)/api/health" 200 30000'
+elif [[ "${SKIP_MONITORING:-0}" == "1" ]]; then
+  log_info "SKIP_MONITORING=1 — skipping Grafana check"
+  RESULTS+=("[SKIP] grafana")
+  PASS=$((PASS + 1))
 else
   run_check grafana bash -c 'assert_http "$(grafana_url)/api/health" 200 10000'
 fi

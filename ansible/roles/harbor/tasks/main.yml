@@ -3,6 +3,7 @@
   ansible.builtin.set_fact:
     kubeconfig: "{{ kubeconfig }}"
     harbor_values: "{{ playbook_dir }}/../manifests/harbor/{{ 'values-low.yaml' if (low_memory_mode | default(false)) else 'values.yaml' }}"
+    harbor_chart_dir: "{{ lookup('env', 'HARBOR_CHART_DIR') | default('/tmp/harbor-helm', true) }}"
 
 - name: Create harbor namespace
   ansible.builtin.command: kubectl create namespace harbor
@@ -18,23 +19,18 @@
     KUBECONFIG: "{{ kubeconfig }}"
   changed_when: false
 
-- name: Ensure Harbor Helm repository
-  ansible.builtin.command: "{{ playbook_dir }}/../scripts/helm-ensure-repo.sh harbor https://helm.goharbor.io"
+- name: Prefetch Harbor Helm chart from GitHub
+  ansible.builtin.command: "{{ playbook_dir }}/../scripts/prefetch-harbor-chart.sh"
   environment:
-    KUBECONFIG: "{{ kubeconfig }}"
-  register: harbor_repo
-  until: harbor_repo.rc == 0
-  retries: 3
-  delay: 15
+    HARBOR_CHART_DIR: "{{ harbor_chart_dir }}"
   changed_when: false
 
-- name: Install Harbor
+- name: Install Harbor from local chart
   ansible.builtin.command: >
-    helm upgrade --install harbor harbor/harbor
-    --repo https://helm.goharbor.io
+    helm upgrade --install harbor {{ harbor_chart_dir }}
     --namespace harbor
     --values {{ harbor_values }}
-    --wait --timeout 15m
+    --wait --timeout 20m
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
   register: harbor_install

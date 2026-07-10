@@ -116,6 +116,19 @@ kubectl -n harbor get pods
 kubectl -n harbor describe pod -l component=core
 ```
 
+**Мало RAM (4 GB)?** Пропустите Grafana (~300–500 MB):
+
+```bash
+SKIP_MONITORING=1 ./setup.sh
+```
+
+**Harbor / helm.goharbor.io недоступен из РФ?** Chart скачивается с GitHub автоматически. Вручную:
+
+```bash
+./scripts/prefetch-harbor-chart.sh
+helm upgrade --install harbor /tmp/harbor-helm -n harbor -f manifests/harbor/values-low.yaml --wait
+```
+
 **Таймаут скачивания Istio/GitHub** — повторите или скачайте вручную:
 ```bash
 ./scripts/prefetch-istio.sh

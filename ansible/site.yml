@@ -9,10 +9,12 @@
     istio_version: "1.23.2"
     harbor_admin_password: "Harbor12345"
     bookinfo_version: "release-1.23"
+    skip_monitoring: "{{ lookup('env', 'SKIP_MONITORING') | default('0', true) in ['1', 'true', 'yes'] }}"
   roles:
     - preflight
     - k3s
     - istio
     - harbor
     - bookinfo
-    - monitoring
+    - role: monitoring
+      when: not skip_monitoring
