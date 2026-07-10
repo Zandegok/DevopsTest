@@ -50,13 +50,23 @@ DEMO=1 ./chaos/03-delay-harbor-core-registry.sh
 
 ## Доступ к сервисам
 
-| Сервис   | URL / порт              | Логин              |
-|----------|-------------------------|--------------------|
+| Сервис   | URL | Логин |
+|----------|-----|-------|
 | Bookinfo | `http://<VM_IP>:<nodePort>/productpage` | — |
-| Harbor   | `http://<VM_IP>:30002`  | admin / Harbor12345 |
-| Grafana  | `http://<VM_IP>:30300`  | admin / prom-operator |
+| Harbor   | `http://<VM_IP>:<nodePort>` | admin / Harbor12345 |
+| Grafana  | `http://<VM_IP>:<nodePort>` | admin / prom-operator |
 
-Точные URL: `./scripts/print-access.sh`
+NodePort назначается **динамически** (Kubernetes 30000–32767). Точные URL и порты:
+
+```bash
+./scripts/print-access.sh
+```
+
+Зафиксировать порты (если нужно для firewall/демо):
+
+```bash
+HARBOR_NODEPORT=30002 GRAFANA_NODEPORT=30300 ./setup.sh
+```
 
 ## Что установлено
 
@@ -66,7 +76,7 @@ DEMO=1 ./chaos/03-delay-harbor-core-registry.sh
 | Istio 1.23 | `istioctl install --set profile=demo` | demo profile |
 | Harbor 2.14 | Helm chart `harbor/harbor` | 1 на все компоненты |
 | Bookinfo | официальные манифесты Istio | 1 на сервис |
-| Monitoring | `kube-prometheus-stack` | Grafana NodePort 30300 |
+| Monitoring | `kube-prometheus-stack` | Grafana NodePort (auto) |
 
 Автоматизация: Ansible playbook [`ansible/site.yml`](ansible/site.yml), вызывается из [`setup.sh`](setup.sh).
 
@@ -125,10 +135,20 @@ kubectl label namespace harbor istio-injection- --overwrite
 kubectl -n harbor rollout restart deploy/harbor-core deploy/harbor-jobservice
 ```
 
-**Мало RAM (4 GB)?** Пропустите Grafana (~300–500 MB):
+**Мало RAM (4 GB)?** На VM < 7 GB Grafana пропускается автоматически. Явно:
 
 ```bash
 SKIP_MONITORING=1 ./setup.sh
+```
+
+**Shared VPS (Docker + k3s)?** NodePort k8s (30000+) не пересекается с типичными портами Docker (5432, 8081). Можно держать Postgres/SWAG на хосте параллельно. Для чистой демонстрации: `./teardown.sh && ./setup.sh`.
+
+**Bookinfo 503 снаружи, pods 2/2 Running?** Gateway должен слушать port **80** (не 8080). Setup патчит автоматически; на уже поднятом кластере:
+
+```bash
+git pull
+./scripts/sync-ports.sh
+./verify.sh
 ```
 
 **Harbor / helm.goharbor.io недоступен из РФ?** Chart скачивается с GitHub автоматически. Вручную:

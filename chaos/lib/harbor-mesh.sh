@@ -15,7 +15,11 @@ harbor_mesh_enable() {
   kubectl -n harbor rollout restart deployment/harbor-core deployment/harbor-registry
   kubectl -n harbor rollout status deployment/harbor-core --timeout=300s
   kubectl -n harbor rollout status deployment/harbor-registry --timeout=300s
-  retry 12 10 bash -c 'assert_http "$(harbor_url)/api/v2.0/health" 200 5000'
+  retry 12 10 check_harbor_health
+}
+
+check_harbor_health() {
+  assert_http "$(harbor_url)/api/v2.0/health" 200 5000
 }
 
 harbor_mesh_disable() {
@@ -30,5 +34,5 @@ harbor_mesh_disable() {
   kubectl -n harbor rollout restart deployment/harbor-core deployment/harbor-registry \
     deployment/harbor-jobservice deployment/harbor-nginx 2>/dev/null || true
   kubectl -n harbor rollout status deployment/harbor-core --timeout=300s
-  retry 12 10 bash -c 'assert_http "$(harbor_url)/api/v2.0/health" 200 5000'
+  retry 12 10 check_harbor_health
 }

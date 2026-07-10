@@ -11,15 +11,25 @@ retry 60 10 kubectl get nodes >/dev/null
 
 retry 60 10 bash -c '[[ "$(kubectl get nodes -o jsonpath="{.items[0].status.conditions[?(@.type==\"Ready\")].status}")" == "True" ]]'
 
+log_info "Istio control plane..."
 retry 60 10 kubectl -n istio-system wait --for=condition=available deployment/istiod --timeout=30s
 retry 60 10 kubectl -n istio-system wait --for=condition=available deployment/istio-ingressgateway --timeout=30s
 
+ensure_bookinfo_gateway || true
+
+log_info "Harbor pods and health..."
 retry 120 15 assert_pods_ready harbor '' || true
-retry 60 10 wait_for_url "$(harbor_url)/api/v2.0/health" 200 30 || true
+wait_for_url "$(harbor_url)/api/v2.0/health" 200 600 harbor || true
 
+log_info "Bookinfo pods and ingress..."
 retry 60 10 assert_pods_ready default 'app=productpage'
-retry 60 10 wait_for_url "$(bookinfo_url)" 200 30
+wait_for_url "$(bookinfo_url)" 200 600 bookinfo
 
-retry 60 10 wait_for_url "$(grafana_url)/api/health" 200 30 || true
+if [[ "${SKIP_MONITORING:-0}" == "1" ]]; then
+  log_info "SKIP_MONITORING=1 — skipping Grafana"
+else
+  log_info "Grafana health..."
+  wait_for_url "$(grafana_url)/api/health" 200 600 grafana || true
+fi
 
 log_pass "all core services are ready"

@@ -2,7 +2,6 @@ grafana:
   enabled: true
   service:
     type: NodePort
-    nodePort: 30300
   adminPassword: prom-operator
   resources:
     requests:

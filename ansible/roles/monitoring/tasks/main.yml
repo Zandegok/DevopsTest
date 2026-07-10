@@ -25,14 +25,23 @@
   changed_when: false
 
 - name: Install kube-prometheus-stack
-  ansible.builtin.command: >
-    helm upgrade --install monitoring prometheus-community/kube-prometheus-stack
-    --repo https://prometheus-community.github.io/helm-charts
-    --namespace monitoring
-    --values {{ monitoring_values }}
-    --wait --timeout 15m
+  ansible.builtin.shell: |
+    set -euo pipefail
+    extra=()
+    if [[ -n "${GRAFANA_NODEPORT:-}" ]]; then
+      extra+=(--set-string "grafana.service.nodePort=${GRAFANA_NODEPORT}")
+    fi
+    helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+      --repo https://prometheus-community.github.io/helm-charts \
+      --namespace monitoring \
+      --values {{ monitoring_values }} \
+      "${extra[@]}" \
+      --wait --timeout 15m
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
+    GRAFANA_NODEPORT: "{{ lookup('env', 'GRAFANA_NODEPORT') | default('', true) }}"
+  args:
+    executable: /bin/bash
   register: mon_install
   until: mon_install.rc == 0
   retries: 2

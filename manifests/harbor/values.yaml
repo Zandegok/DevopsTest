@@ -2,12 +2,8 @@ expose:
   type: nodePort
   tls:
     enabled: false
-  nodePort:
-    ports:
-      http:
-        nodePort: 30002
 
-externalURL: http://localhost:30002
+externalURL: http://127.0.0.1
 
 harborAdminPassword: Harbor12345
 

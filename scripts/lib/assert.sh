@@ -5,7 +5,14 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export ROOT_DIR
-export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
+
+if [[ -z "${KUBECONFIG:-}" ]]; then
+  if [[ -f "$HOME/.kube/config" ]]; then
+    export KUBECONFIG="$HOME/.kube/config"
+  elif [[ -f /etc/rancher/k3s/k3s.yaml ]]; then
+    export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+  fi
+fi
 
 log_pass() { echo "[PASS] $*"; }
 log_fail() { echo "[FAIL] $*" >&2; }
@@ -164,39 +171,116 @@ assert_sidecar_injection() {
   return 1
 }
 
+k8s_nodeport() {
+  local ns="$1"
+  local svc="$2"
+  local filter="$3"
+  kubectl -n "$ns" get svc "$svc" -o "jsonpath={.spec.ports[?(${filter})].nodePort}" 2>/dev/null \
+    | tr -d '[:space:]'
+}
+
+bookinfo_nodeport() {
+  local port=""
+  if [[ -n "${BOOKINFO_NODEPORT:-}" ]]; then
+    echo "$BOOKINFO_NODEPORT"
+    return 0
+  fi
+  port=$(k8s_nodeport istio-system istio-ingressgateway '@.port==80')
+  if [[ -z "$port" ]]; then
+    port=$(k8s_nodeport istio-system istio-ingressgateway '@.name=="http"')
+  fi
+  if [[ -z "$port" ]]; then
+    port=$(k8s_nodeport istio-system istio-ingressgateway '@.name=="http2"')
+  fi
+  if [[ -n "$port" ]]; then
+    echo "$port"
+  fi
+}
+
 bookinfo_url() {
-  local ip
+  local ip port
   ip=$(vm_ip)
-  local port
-  port=$(kubectl -n istio-system get svc istio-ingressgateway -o jsonpath='{.spec.ports[?(@.name=="http2")].nodePort}' 2>/dev/null || echo "30080")
-  echo "http://${ip}:${port}/productpage"
+  port=$(bookinfo_nodeport || true)
+  echo "http://${ip:-127.0.0.1}:${port:-30080}/productpage"
+}
+
+harbor_nodeport() {
+  local port=""
+  if [[ -n "${HARBOR_NODEPORT:-}" ]]; then
+    echo "$HARBOR_NODEPORT"
+    return 0
+  fi
+  port=$(k8s_nodeport harbor harbor '@.name=="http"')
+  if [[ -z "$port" ]]; then
+    port=$(k8s_nodeport harbor harbor '@.port==80')
+  fi
+  if [[ -n "$port" ]]; then
+    echo "$port"
+  fi
 }
 
 harbor_url() {
-  local ip
+  local ip port
   ip=$(vm_ip)
-  echo "http://${ip}:30002"
+  port=$(harbor_nodeport || true)
+  echo "http://${ip:-127.0.0.1}:${port:-30002}"
+}
+
+grafana_nodeport() {
+  local port=""
+  if [[ -n "${GRAFANA_NODEPORT:-}" ]]; then
+    echo "$GRAFANA_NODEPORT"
+    return 0
+  fi
+  port=$(kubectl -n monitoring get svc -l app.kubernetes.io/name=grafana \
+    -o jsonpath='{.items[0].spec.ports[?(@.port==80)].nodePort}' 2>/dev/null | tr -d '[:space:]')
+  if [[ -z "$port" ]]; then
+    port=$(kubectl -n monitoring get svc -l app.kubernetes.io/name=grafana \
+      -o jsonpath='{.items[0].spec.ports[0].nodePort}' 2>/dev/null | tr -d '[:space:]')
+  fi
+  if [[ -n "$port" ]]; then
+    echo "$port"
+  fi
 }
 
 grafana_url() {
-  local ip
+  local ip port
   ip=$(vm_ip)
-  echo "http://${ip}:30300"
+  port=$(grafana_nodeport || true)
+  echo "http://${ip:-127.0.0.1}:${port:-30300}"
+}
+
+ensure_bookinfo_gateway() {
+  local current
+  current=$(kubectl -n default get gateway bookinfo-gateway \
+    -o jsonpath='{.spec.servers[0].port.number}' 2>/dev/null || true)
+  if [[ "$current" == "80" ]]; then
+    return 0
+  fi
+  log_info "patching bookinfo-gateway port ${current:-unknown} -> 80"
+  kubectl -n default patch gateway bookinfo-gateway --type=json \
+    -p='[{"op":"replace","path":"/spec/servers/0/port/number","value":80},{"op":"replace","path":"/spec/servers/0/port/name","value":"http"}]' \
+    >/dev/null 2>&1
 }
 
 wait_for_url() {
   local url="$1"
   local expect_code="${2:-200}"
   local timeout="${3:-300}"
+  local label="${4:-$url}"
   local elapsed=0
+  local interval=5
   while [[ "$elapsed" -lt "$timeout" ]]; do
     local code
     code=$(curl_code "$url" 10)
+    log_info "wait ${label}: HTTP ${code} (want ${expect_code}) ${elapsed}s/${timeout}s"
     if [[ "$code" == "$expect_code" ]]; then
+      log_pass "ready ${label} at ${url}"
       return 0
     fi
-    sleep 5
-    elapsed=$((elapsed + 5))
+    sleep "$interval"
+    elapsed=$((elapsed + interval))
   done
+  log_fail "timeout ${label} at ${url} (last HTTP ${code:-000})"
   return 1
 }

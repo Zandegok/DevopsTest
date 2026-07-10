@@ -8,6 +8,14 @@ chmod +x setup.sh verify.sh teardown.sh scripts/*.sh scripts/lib/*.sh chaos/*.sh
 
 log() { echo "[setup $(date +%H:%M:%S)] $*"; }
 
+if [[ -z "${SKIP_MONITORING:-}" ]]; then
+  mem_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+  if [[ "$mem_mb" -gt 0 && "$mem_mb" -lt 7000 ]]; then
+    export SKIP_MONITORING=1
+    log "RAM ${mem_mb}MB — auto SKIP_MONITORING=1 (Grafana skipped below 7 GB)"
+  fi
+fi
+
 if [[ "$(id -u)" -eq 0 ]]; then
   log "Running as root (supported)"
   APT="apt-get"

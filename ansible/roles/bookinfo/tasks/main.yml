@@ -21,6 +21,21 @@
   register: gateway_apply
   changed_when: "'created' in gateway_apply.stdout or 'configured' in gateway_apply.stdout"
 
+- name: Ensure Bookinfo gateway listens on port 80 (istio-ingressgateway HTTP)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    current=$(kubectl -n default get gateway bookinfo-gateway -o jsonpath='{.spec.servers[0].port.number}' 2>/dev/null || echo "")
+    if [[ "$current" != "80" ]]; then
+      kubectl -n default patch gateway bookinfo-gateway --type=json \
+        -p='[{"op":"replace","path":"/spec/servers/0/port/number","value":80},{"op":"replace","path":"/spec/servers/0/port/name","value":"http"}]'
+      echo changed
+    fi
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  register: gateway_patch
+  changed_when: "'changed' in gateway_patch.stdout"
+  failed_when: false
+
 - name: Wait for productpage deployment
   ansible.builtin.command: kubectl rollout status deploy/productpage-v1 --timeout=300s
   environment:

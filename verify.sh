@@ -21,25 +21,45 @@ run_check() {
   fi
 }
 
+check_k3s_ready() {
+  [[ "$(kubectl get nodes -o jsonpath="{.items[0].status.conditions[?(@.type==\"Ready\")].status}")" == "True" ]]
+}
+
+check_istio_deployments() {
+  kubectl -n istio-system get deploy istiod istio-ingressgateway >/dev/null
+}
+
+check_harbor() {
+  assert_http "$(harbor_url)/api/v2.0/health" 200 5000
+}
+
+check_bookinfo() {
+  assert_http "$(bookinfo_url)" 200 8000
+}
+
+check_grafana() {
+  local max_ms="${1:-10000}"
+  assert_http "$(grafana_url)/api/health" 200 "$max_ms"
+}
+
 log_info "Starting smoke verification..."
 
-run_check k3s bash -c '[[ "$(kubectl get nodes -o jsonpath="{.items[0].status.conditions[?(@.type==\"Ready\")].status}")" == "True" ]]'
+ensure_bookinfo_gateway || true
 
-run_check istio bash -c 'kubectl -n istio-system get deploy istiod istio-ingressgateway >/dev/null'
-
-run_check harbor bash -c 'assert_http "$(harbor_url)/api/v2.0/health" 200 5000'
-
-run_check bookinfo bash -c 'assert_http "$(bookinfo_url)" 200 8000'
+run_check k3s check_k3s_ready
+run_check istio check_istio_deployments
+run_check harbor check_harbor
+run_check bookinfo check_bookinfo
 
 if [[ -f "$ROOT_DIR/.low-memory" ]]; then
   log_info "Low-memory VM detected ($(cat "$ROOT_DIR/.low-memory") MB) — Grafana check uses extended timeout"
-  run_check grafana bash -c 'assert_http "$(grafana_url)/api/health" 200 30000'
+  run_check grafana check_grafana 30000
 elif [[ "${SKIP_MONITORING:-0}" == "1" ]]; then
   log_info "SKIP_MONITORING=1 — skipping Grafana check"
   RESULTS+=("[SKIP] grafana")
   PASS=$((PASS + 1))
 else
-  run_check grafana bash -c 'assert_http "$(grafana_url)/api/health" 200 10000'
+  run_check grafana check_grafana 10000
 fi
 
 run_check sidecar assert_sidecar_injection default 'app=productpage'
