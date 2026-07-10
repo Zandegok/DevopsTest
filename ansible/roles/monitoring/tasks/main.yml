@@ -1,7 +1,7 @@
 ---
 - name: Set kubeconfig path
   ansible.builtin.set_fact:
-    kubeconfig: "/home/{{ ansible_env.SUDO_USER | default(ansible_user_id) }}/.kube/config"
+    kubeconfig: "{{ kubeconfig }}"
     monitoring_values: "{{ playbook_dir }}/../manifests/istio/monitoring/values.yaml"
 
 - name: Create monitoring namespace

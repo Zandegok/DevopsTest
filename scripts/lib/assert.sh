@@ -5,6 +5,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export ROOT_DIR
+export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
 
 log_pass() { echo "[PASS] $*"; }
 log_fail() { echo "[FAIL] $*" >&2; }

@@ -9,14 +9,16 @@ chmod +x setup.sh verify.sh teardown.sh scripts/*.sh scripts/lib/*.sh chaos/*.sh
 log() { echo "[setup] $*"; }
 
 if [[ "$(id -u)" -eq 0 ]]; then
-  echo "Run as a sudo-capable user, not root." >&2
-  exit 1
+  log "Running as root (supported)"
+  APT="apt-get"
+else
+  APT="sudo apt-get"
 fi
 
 if ! command -v ansible-playbook >/dev/null 2>&1; then
   log "Installing Ansible and dependencies..."
-  sudo apt-get update -qq
-  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+  $APT update -qq
+  DEBIAN_FRONTEND=noninteractive $APT install -y -qq \
     ansible curl ca-certificates jq
 fi
 

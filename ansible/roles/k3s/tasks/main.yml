@@ -21,21 +21,21 @@
   delay: 10
   changed_when: false
 
-- name: Ensure kubeconfig for ansible user
+- name: Ensure kubeconfig directory
   ansible.builtin.file:
-    path: "/home/{{ ansible_env.SUDO_USER | default(ansible_user_id) }}/.kube"
+    path: "{{ ansible_env.HOME }}/.kube"
     state: directory
-    owner: "{{ ansible_env.SUDO_USER | default(ansible_user_id) }}"
-    group: "{{ ansible_env.SUDO_USER | default(ansible_user_id) }}"
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_user }}"
     mode: "0755"
 
 - name: Copy k3s kubeconfig to user home
   ansible.builtin.copy:
     src: /etc/rancher/k3s/k3s.yaml
-    dest: "/home/{{ ansible_env.SUDO_USER | default(ansible_user_id) }}/.kube/config"
+    dest: "{{ kubeconfig }}"
     remote_src: true
-    owner: "{{ ansible_env.SUDO_USER | default(ansible_user_id) }}"
-    group: "{{ ansible_env.SUDO_USER | default(ansible_user_id) }}"
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_user }}"
     mode: "0600"
 
 - name: Install kubectl
