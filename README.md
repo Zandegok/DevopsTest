@@ -9,9 +9,12 @@
 
 ```bash
 git clone <URL-репозитория> chaos-k8s && cd chaos-k8s
+chmod +x setup.sh verify.sh teardown.sh scripts/*.sh chaos/*.sh chaos/lib/*.sh 2>/dev/null || true
 ./setup.sh
 ./verify.sh && ./chaos/run-all.sh
 ```
+
+Если после `git clone` видите `Permission denied`, используйте `bash setup.sh` или команду `chmod` выше.
 
 `setup.sh` (~15–25 мин) устанавливает k3s, Istio, Harbor, Bookinfo, Grafana и в конце сам запускает `verify.sh`.
 
