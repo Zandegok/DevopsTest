@@ -28,12 +28,12 @@ chmod +x setup.sh verify.sh teardown.sh scripts/*.sh scripts/lib/*.sh chaos/*.sh
 [PASS] istio
 [PASS] harbor
 [PASS] bookinfo
-[PASS] grafana
+[PASS] grafana   # или [SKIP] grafana на VM < 7 GB
 [PASS] sidecar
 ALL PASSED (6/6)
 
 === CHAOS SUMMARY ===
-Passed: 4 / 4
+Passed: 3 / 3
 ALL CHAOS EXPERIMENTS PASSED
 ```
 
@@ -47,6 +47,12 @@ DEMO=1 ./chaos/03-delay-harbor-core-registry.sh
 ```
 
 `DEMO=1` включает паузы с подсказками (можно открыть Grafana). Без `DEMO=1` скрипты полностью автоматические.
+
+`./chaos/run-all.sh` запускает три основных сценария (01–03). CPU stress (`04`) — бонусный host-failure сценарий; на shared/low-memory VPS его результат зависит от noisy-neighbor эффекта и baseline latency. Запуск бонуса:
+
+```bash
+RUN_BONUS=1 ./chaos/run-all.sh
+```
 
 ## Доступ к сервисам
 
@@ -101,7 +107,7 @@ CHAOS_RESEARCH.md — анализ сценариев и защита
 | `03-delay-harbor-core-registry.sh` | Harbor delay | 5s между `harbor-core` и `harbor-registry` |
 | `04-custom-cpu-stress.sh` | Host failure (бонус) | CPU stress в pod `ratings` |
 
-Каждый скрипт: baseline → пауза → apply fault → assert → пауза → rollback → recover.
+Каждый основной скрипт: baseline → пауза → apply fault → assert → пауза → rollback → recover.
 
 ## Makefile
 

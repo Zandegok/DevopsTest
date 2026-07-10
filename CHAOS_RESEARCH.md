@@ -104,6 +104,8 @@
 **Скрипт:** `chaos/04-custom-cpu-stress.sh`  
 **Категория:** Host failure / resource exhaustion ([Habr: типы экспериментов](https://habr.com/ru/companies/slurm/articles/737296/)).
 
+Это бонусный сценарий. На low-memory/shared VPS внешний latency baseline уже шумный, поэтому основной доказательный набор — 01–03; для 04 допустима интерпретация "нагрузка выполнена, сервис остался доступен в пределах SLO".
+
 ### Реальные примеры
 
 1. **Noisy neighbor на node** — соседний pod съел CPU, ratings получил throttling.

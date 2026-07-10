@@ -10,6 +10,13 @@ TOTAL=0
 
 for script in chaos/0*.sh; do
   [[ -f "$script" ]] || continue
+  if [[ "$(basename "$script")" == "04-custom-cpu-stress.sh" && "${RUN_BONUS:-0}" != "1" ]]; then
+    echo ""
+    echo ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
+    echo "Skipping $script (bonus; set RUN_BONUS=1 to include)"
+    echo ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
+    continue
+  fi
   TOTAL=$((TOTAL + 1))
   echo ""
   echo ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
