@@ -43,7 +43,12 @@ check_bookinfo() {
 
 check_grafana() {
   local max_ms="${1:-10000}"
-  assert_http "$(grafana_url)/api/health" 200 "$max_ms"
+  local url
+  url=$(grafana_url) || {
+    log_fail "Grafana not installed"
+    return 1
+  }
+  assert_http "${url}/api/health" 200 "$max_ms"
 }
 
 log_info "Starting smoke verification..."
@@ -57,15 +62,17 @@ ensure_bookinfo_ingress || log_fail "Bookinfo ingress not ready — run ./script
 
 run_check bookinfo check_bookinfo
 
-if [[ -f "$ROOT_DIR/.low-memory" ]]; then
-  log_info "Low-memory VM detected ($(cat "$ROOT_DIR/.low-memory") MB) — Grafana check uses extended timeout"
-  run_check grafana check_grafana 30000
-elif [[ "${SKIP_MONITORING:-0}" == "1" ]]; then
-  log_info "SKIP_MONITORING=1 — skipping Grafana check"
+if [[ "${SKIP_MONITORING:-0}" == "1" ]] || ! grafana_installed; then
+  log_info "Grafana not installed — skipping check (SKIP_MONITORING=1 or monitoring release missing)"
   RESULTS+=("[SKIP] grafana")
   PASS=$((PASS + 1))
 else
-  run_check grafana check_grafana 10000
+  max_ms=10000
+  if [[ -f "$ROOT_DIR/.low-memory" ]]; then
+    max_ms=30000
+    log_info "Low-memory VM detected ($(cat "$ROOT_DIR/.low-memory") MB) — Grafana check uses extended timeout"
+  fi
+  run_check grafana check_grafana "$max_ms"
 fi
 
 run_check sidecar assert_sidecar_injection default 'app=productpage'

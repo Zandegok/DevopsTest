@@ -276,26 +276,32 @@ harbor_url() {
 
 grafana_nodeport() {
   local port=""
-  if [[ -n "${GRAFANA_NODEPORT:-}" ]]; then
-    echo "$GRAFANA_NODEPORT"
-    return 0
-  fi
   port=$(kubectl -n monitoring get svc -l app.kubernetes.io/name=grafana \
     -o jsonpath='{.items[0].spec.ports[?(@.port==80)].nodePort}' 2>/dev/null | tr -d '[:space:]')
   if [[ -z "$port" ]]; then
     port=$(kubectl -n monitoring get svc -l app.kubernetes.io/name=grafana \
       -o jsonpath='{.items[0].spec.ports[0].nodePort}' 2>/dev/null | tr -d '[:space:]')
   fi
-  if [[ -n "$port" ]]; then
+  if [[ -z "$port" ]]; then
+    return 1
+  fi
+  if [[ -n "${GRAFANA_NODEPORT:-}" ]]; then
+    echo "$GRAFANA_NODEPORT"
+  else
     echo "$port"
   fi
+}
+
+grafana_installed() {
+  kubectl -n monitoring get svc -l app.kubernetes.io/name=grafana -o name >/dev/null 2>&1
 }
 
 grafana_url() {
   local ip port
   ip=$(vm_ip)
   port=$(grafana_nodeport || true)
-  echo "http://${ip:-127.0.0.1}:${port:-30300}"
+  [[ -n "$port" ]] || return 1
+  echo "http://${ip:-127.0.0.1}:${port}"
 }
 
 ensure_istio_ingress_nodeport() {

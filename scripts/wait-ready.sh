@@ -29,8 +29,8 @@ log_info "Bookinfo pods and ingress..."
 retry 60 10 assert_pods_ready default 'app=productpage'
 wait_for_url "$(bookinfo_url)" 200 600 bookinfo
 
-if [[ "${SKIP_MONITORING:-0}" == "1" ]]; then
-  log_info "SKIP_MONITORING=1 — skipping Grafana"
+if [[ "${SKIP_MONITORING:-0}" == "1" ]] || ! grafana_installed; then
+  log_info "Grafana not installed — skipping health wait"
 else
   log_info "Grafana health..."
   wait_for_url "$(grafana_url)/api/health" 200 600 grafana || true
