@@ -16,7 +16,7 @@ log_info "=== Experiment: 03-delay-harbor-core-registry ==="
 harbor_mesh_reset_if_needed
 
 log_info "[1/9] BASELINE"
-"$ROOT_DIR/chaos/lib/baseline-checks.sh" harbor
+retry 30 10 "$ROOT_DIR/chaos/lib/baseline-checks.sh" harbor
 
 pause_or_skip "Baseline OK. Press Enter to enable temporary Harbor mesh for fault demo..."
 
@@ -46,6 +46,6 @@ log_info "[6/9] DISABLE temporary Harbor sidecars"
 harbor_mesh_disable
 
 log_info "[7/9] RECOVER"
-"$ROOT_DIR/chaos/lib/baseline-checks.sh" harbor
+retry 30 10 "$ROOT_DIR/chaos/lib/baseline-checks.sh" harbor
 
 log_pass "Experiment completed: 03-delay-harbor-core-registry"

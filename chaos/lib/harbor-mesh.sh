@@ -339,7 +339,8 @@ harbor_restart_dependencies() {
 
 harbor_wait_healthy() {
   local attempts="${1:-72}"
-  local i code ready
+  local consecutive_required="${2:-1}"
+  local i code ready consecutive=0
   log_info "Waiting for Harbor /api/v2.0/health (up to $((attempts * 10))s; slow on 4 GB VM)"
   for ((i = 1; i <= attempts; i++)); do
     code=$(curl_code "$(harbor_url)/api/v2.0/health" 20)
@@ -347,8 +348,13 @@ harbor_wait_healthy() {
       -o jsonpath='{.items[0].status.containerStatuses[?(@.name=="core")].ready}' 2>/dev/null || echo false)
     log_info "Harbor health HTTP ${code:-000}, core ready=${ready:-?} (${i}/${attempts})"
     if [[ "$code" == "200" ]]; then
-      log_pass "Harbor health OK"
-      return 0
+      consecutive=$((consecutive + 1))
+      if [[ "$consecutive" -ge "$consecutive_required" ]]; then
+        log_pass "Harbor health OK (${consecutive} consecutive HTTP 200 checks)"
+        return 0
+      fi
+    else
+      consecutive=0
     fi
     if (( i == 12 || i == 24 || i == 36 )); then
       kubectl -n harbor get pods -l 'app=harbor,component in (core,registry,nginx)' --no-headers 2>/dev/null || true
@@ -370,5 +376,5 @@ harbor_mesh_disable() {
   log_info "Removing temporary Istio sidecars from Harbor deployments"
   harbor_mesh_remove_sidecar harbor-core
   harbor_mesh_remove_sidecar harbor-registry
-  harbor_wait_healthy 48
+  harbor_wait_healthy 72 6
 }

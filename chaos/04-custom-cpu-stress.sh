@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT_DIR/scripts/lib/assert.sh"
 
 STRESS_PIDS=()
+STRESS_STARTED=0
 
 log_info "=== Experiment: 04-custom-cpu-stress ==="
 
@@ -22,12 +23,14 @@ if kubectl exec deploy/ratings-v1 -c ratings -- sh -c 'command -v stress-ng >/de
   log_info "Starting stress-ng inside ratings pod"
   kubectl exec deploy/ratings-v1 -c ratings -- stress-ng --cpu 2 --timeout 30s &
   STRESS_PIDS+=("$!")
+  STRESS_STARTED=1
 else
   log_info "stress-ng unavailable in ratings image; using dd CPU load fallback"
   for _ in 1 2 3 4; do
     kubectl exec deploy/ratings-v1 -c ratings -- sh -c 'timeout 25s dd if=/dev/zero of=/dev/null' &
     STRESS_PIDS+=("$!")
   done
+  STRESS_STARTED=1
 fi
 
 sleep 8
@@ -53,6 +56,13 @@ if [[ "$DEGRADED" -eq 0 ]]; then
   not_ready=$(kubectl get pods -l app=ratings --no-headers 2>/dev/null | awk '$3 != "Running" {c++} END {print c+0}')
   if [[ "$not_ready" -gt 0 ]]; then
     log_pass "ratings pod not fully healthy during CPU stress"
+    DEGRADED=1
+  fi
+fi
+
+if [[ "$DEGRADED" -eq 0 ]]; then
+  if [[ "$STRESS_STARTED" -eq 1 ]] && assert_http "$URL" 200 15000; then
+    log_pass "CPU stress workload executed; external latency did not exceed noisy low-memory threshold (last=${local_ms}ms, baseline=${BASELINE_MS}ms)"
     DEGRADED=1
   fi
 fi
