@@ -3,6 +3,14 @@
 # Harbor namespace must NOT have istio-injection=enabled (breaks Redis TCP).
 set -euo pipefail
 
+CHAOS_HARBOR_BACKUP_DIR="${CHAOS_HARBOR_BACKUP_DIR:-/tmp/chaos-k8s-harbor-backup}"
+
+harbor_mesh_backup() {
+  mkdir -p "$CHAOS_HARBOR_BACKUP_DIR"
+  kubectl -n harbor get deployment harbor-core -o yaml > "$CHAOS_HARBOR_BACKUP_DIR/harbor-core.yaml"
+  kubectl -n harbor get deployment harbor-registry -o yaml > "$CHAOS_HARBOR_BACKUP_DIR/harbor-registry.yaml"
+}
+
 harbor_mesh_patch_template() {
   local deploy="$1"
   local inject="$2"
@@ -34,21 +42,40 @@ EOF
   kubectl -n harbor patch deployment "$deploy" --type=strategic -p "$patch"
 }
 
+harbor_mesh_inject_deployment() {
+  local deploy="$1"
+  local exclude_ports="${2:-}"
+  if [[ -n "$exclude_ports" ]]; then
+    harbor_mesh_patch_template "$deploy" true "$exclude_ports"
+  else
+    harbor_mesh_patch_template "$deploy" true ""
+  fi
+  kubectl -n harbor get deployment "$deploy" -o yaml \
+    | istioctl kube-inject -f - \
+    | kubectl apply -f -
+}
+
 harbor_mesh_sidecars_ready() {
   assert_sidecar_injection harbor 'app=harbor,component=core'
   assert_sidecar_injection harbor 'app=harbor,component=registry'
 }
 
 harbor_mesh_enable() {
-  log_info "Enabling selective Istio sidecars on harbor-core and harbor-registry"
-  harbor_mesh_patch_template harbor-core true "6379,5432"
-  harbor_mesh_patch_template harbor-registry true ""
-  kubectl -n harbor rollout restart deployment/harbor-core deployment/harbor-registry
+  if ! command -v istioctl >/dev/null 2>&1; then
+    log_fail "istioctl not found — required for Harbor mesh chaos demo"
+    return 1
+  fi
+
+  log_info "Enabling selective Istio sidecars on harbor-core and harbor-registry (istioctl kube-inject)"
+  kubectl label namespace harbor istio-injection- --overwrite 2>/dev/null || true
+  harbor_mesh_backup
+  harbor_mesh_inject_deployment harbor-core "6379,5432"
+  harbor_mesh_inject_deployment harbor-registry ""
   kubectl -n harbor rollout status deployment/harbor-core --timeout=300s
   kubectl -n harbor rollout status deployment/harbor-registry --timeout=300s
   harbor_registry_mark_http_protocol
-  retry 24 10 check_harbor_health
-  retry 12 10 harbor_mesh_sidecars_ready
+  retry 30 10 check_harbor_health
+  retry 18 10 harbor_mesh_sidecars_ready
 }
 
 harbor_registry_mark_http_protocol() {
@@ -69,10 +96,17 @@ check_harbor_health() {
 
 harbor_mesh_disable() {
   log_info "Removing temporary Istio sidecars from Harbor deployments"
-  harbor_mesh_patch_template harbor-core false
-  harbor_mesh_patch_template harbor-registry false
-  kubectl -n harbor rollout restart deployment/harbor-core deployment/harbor-registry \
-    deployment/harbor-jobservice deployment/harbor-nginx 2>/dev/null || true
+  if [[ -f "$CHAOS_HARBOR_BACKUP_DIR/harbor-core.yaml" ]] \
+    && [[ -f "$CHAOS_HARBOR_BACKUP_DIR/harbor-registry.yaml" ]]; then
+    kubectl apply -f "$CHAOS_HARBOR_BACKUP_DIR/harbor-core.yaml"
+    kubectl apply -f "$CHAOS_HARBOR_BACKUP_DIR/harbor-registry.yaml"
+  else
+    log_info "Harbor backup missing — patching deployments to disable injection"
+    harbor_mesh_patch_template harbor-core false
+    harbor_mesh_patch_template harbor-registry false
+  fi
+  kubectl -n harbor rollout restart deployment/harbor-jobservice deployment/harbor-nginx 2>/dev/null || true
   kubectl -n harbor rollout status deployment/harbor-core --timeout=300s
-  retry 24 10 check_harbor_health
+  kubectl -n harbor rollout status deployment/harbor-registry --timeout=300s
+  retry 30 10 check_harbor_health
 }
