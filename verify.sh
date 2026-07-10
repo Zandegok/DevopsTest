@@ -44,13 +44,13 @@ check_grafana() {
 
 log_info "Starting smoke verification..."
 
-if ! ensure_bookinfo_ingress; then
-  log_fail "Bookinfo ingress fix failed — run ./scripts/fix-bookinfo-ingress.sh"
-fi
-
 run_check k3s check_k3s_ready
 run_check istio check_istio_deployments
 run_check harbor check_harbor
+
+log_info "Ensuring Bookinfo ingress routes..."
+ensure_bookinfo_ingress || log_fail "Bookinfo ingress not ready — run ./scripts/fix-bookinfo-ingress.sh"
+
 run_check bookinfo check_bookinfo
 
 if [[ -f "$ROOT_DIR/.low-memory" ]]; then

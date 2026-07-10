@@ -12,9 +12,9 @@
   register: bookinfo_apply
   changed_when: "'created' in bookinfo_apply.stdout or 'configured' in bookinfo_apply.stdout"
 
-- name: Deploy Bookinfo Gateway and VirtualService (official Istio manifest)
+- name: Deploy Bookinfo Gateway and VirtualService (k3s/NodePort uses Gateway port 80)
   ansible.builtin.command: >
-    kubectl apply -f {{ playbook_dir }}/../manifests/bookinfo/gateway.yaml
+    kubectl apply -f {{ playbook_dir }}/../manifests/bookinfo/gateway-port80.yaml
     -f {{ playbook_dir }}/../manifests/bookinfo/destination-rules.yaml
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
