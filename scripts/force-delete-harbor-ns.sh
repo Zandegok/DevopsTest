@@ -12,8 +12,12 @@ fi
 phase=$(kubectl get namespace "$NS" -o jsonpath='{.status.phase}' 2>/dev/null || true)
 if [[ "$phase" != "Terminating" ]]; then
   echo "[force-delete-harbor-ns] namespace phase=$phase (not Terminating); deleting normally"
-  kubectl delete namespace "$NS" --timeout=60s || true
-  exit 0
+  kubectl delete namespace "$NS" --timeout=60s 2>/dev/null || true
+  if ! kubectl get namespace "$NS" >/dev/null 2>&1; then
+    echo "[force-delete-harbor-ns] OK — namespace $NS removed"
+    exit 0
+  fi
+  echo "[force-delete-harbor-ns] namespace still present after normal delete; forcing finalizers"
 fi
 
 echo "[force-delete-harbor-ns] clearing finalizers on PVCs in $NS"
