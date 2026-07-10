@@ -1,4 +1,5 @@
-all:
+---
+- name: Chaos K8s setup
   hosts: localhost
   connection: local
   become: true
