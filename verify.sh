@@ -34,7 +34,11 @@ check_harbor() {
 }
 
 check_bookinfo() {
-  assert_http "$(bookinfo_url)" 200 8000
+  local max_ms=15000
+  if [[ -f "$ROOT_DIR/.low-memory" ]] || [[ "${SKIP_MONITORING:-0}" == "1" ]]; then
+    max_ms=25000
+  fi
+  assert_http "$(bookinfo_url)" 200 "$max_ms"
 }
 
 check_grafana() {

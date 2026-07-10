@@ -89,10 +89,10 @@ assert_http() {
   local url="$1"
   local expect_code="$2"
   local max_ms="${3:-5000}"
-  local code
-  local ms
-  code=$(curl_code "$url" 60)
-  ms=$(measure_latency_ms "$url" 60)
+  local code ms out
+  out=$(curl -sS -o /dev/null -w "%{http_code} %{time_total}" --connect-timeout 5 --max-time 60 "$url" 2>/dev/null || echo "000 999")
+  code=$(echo "$out" | awk '{print $1}')
+  ms=$(echo "$out" | awk '{printf "%.0f", $2 * 1000}')
   if [[ "$code" == "$expect_code" ]] && [[ "$ms" -le "$max_ms" ]]; then
     log_pass "http $url code=$code latency=${ms}ms (max ${max_ms}ms)"
     return 0

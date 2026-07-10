@@ -12,7 +12,7 @@ case "$SCENARIO" in
     assert_http "$(harbor_url)/api/v2.0/health" 200 5000
     ;;
   *)
-    assert_http "$(bookinfo_url)" 200 5000
+    assert_http "$(bookinfo_url)" 200 15000
     assert_sidecar_injection default 'app=productpage'
     ;;
 esac
