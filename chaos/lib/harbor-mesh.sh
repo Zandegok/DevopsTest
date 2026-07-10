@@ -94,9 +94,7 @@ harbor_mesh_emergency_reset() {
   harbor_mesh_remove_sidecar harbor-core
   harbor_mesh_remove_sidecar harbor-registry
   kubectl -n harbor scale deployment harbor-core harbor-registry --replicas=1
-  harbor_mesh_wait_rollout harbor-core 600
-  harbor_mesh_wait_rollout harbor-registry 600
-  retry 30 10 check_harbor_health
+  harbor_wait_healthy 72
   log_pass "Harbor emergency reset complete"
 }
 
@@ -175,7 +173,11 @@ harbor_mesh_remove_sidecar() {
 EOF
 )
   kubectl -n harbor patch deployment "$deploy" --type=strategic -p "$patch"
-  kubectl -n harbor annotate deployment "$deploy" kubectl.kubernetes.io/last-applied-configuration- --overwrite 2>/dev/null || true
+  kubectl -n harbor annotate deployment "$deploy" \
+    sidecar.istio.io/inject- \
+    traffic.sidecar.istio.io/excludeOutboundPorts- \
+    kubectl.kubernetes.io/last-applied-configuration- \
+    --overwrite 2>/dev/null || true
 }
 
 harbor_mesh_reset_current() {
@@ -281,6 +283,43 @@ harbor_registry_mark_http_protocol() {
     2>/dev/null || true
 }
 
+harbor_restart_dependencies() {
+  log_info "Restarting Harbor nginx and backing services"
+  kubectl -n harbor rollout restart deployment/harbor-nginx 2>/dev/null || true
+  kubectl -n harbor rollout restart statefulset/harbor-redis 2>/dev/null || true
+  kubectl -n harbor rollout restart statefulset/harbor-database 2>/dev/null || true
+  kubectl -n harbor rollout restart deployment/harbor-jobservice 2>/dev/null || true
+}
+
+harbor_wait_healthy() {
+  local attempts="${1:-72}"
+  local i code ready
+  log_info "Waiting for Harbor /api/v2.0/health (up to $((attempts * 10))s; slow on 4 GB VM)"
+  for ((i = 1; i <= attempts; i++)); do
+    code=$(curl_code "$(harbor_url)/api/v2.0/health" 20)
+    ready=$(kubectl -n harbor get pods -l app=harbor,component=core \
+      -o jsonpath='{.items[0].status.containerStatuses[?(@.name=="core")].ready}' 2>/dev/null || echo false)
+    log_info "Harbor health HTTP ${code:-000}, core ready=${ready:-?} (${i}/${attempts})"
+    if [[ "$code" == "200" ]]; then
+      log_pass "Harbor health OK"
+      return 0
+    fi
+    if (( i == 12 || i == 24 || i == 36 )); then
+      kubectl -n harbor get pods -l 'app=harbor,component in (core,registry,nginx)' --no-headers 2>/dev/null || true
+      kubectl -n harbor logs deploy/harbor-core -c core --tail=5 2>/dev/null || true
+    fi
+    if [[ "$i" -eq 18 ]]; then
+      harbor_restart_dependencies
+      kubectl -n harbor rollout restart deployment/harbor-core 2>/dev/null || true
+    fi
+    sleep 10
+  done
+  log_fail "Harbor did not become healthy in time"
+  kubectl -n harbor get pods -l 'app=harbor' --no-headers 2>/dev/null || true
+  kubectl -n harbor describe pod -l app=harbor,component=core 2>/dev/null | tail -40 || true
+  return 1
+}
+
 check_harbor_health() {
   assert_http "$(harbor_url)/api/v2.0/health" 200 15000
 }
@@ -289,7 +328,5 @@ harbor_mesh_disable() {
   log_info "Removing temporary Istio sidecars from Harbor deployments"
   harbor_mesh_remove_sidecar harbor-core
   harbor_mesh_remove_sidecar harbor-registry
-  harbor_mesh_wait_rollout harbor-core
-  harbor_mesh_wait_rollout harbor-registry
-  retry 30 10 check_harbor_health
+  harbor_wait_healthy 48
 }
