@@ -268,15 +268,35 @@ clear_bookinfo_faults() {
   kubectl delete -f "$ROOT_DIR/manifests/istio/faults/" --ignore-not-found 2>/dev/null || true
 }
 
+is_k3s_cluster() {
+  [[ -f /etc/rancher/k3s/k3s.yaml ]] \
+    || command -v k3s >/dev/null 2>&1 \
+    || kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' 2>/dev/null | grep -qi k3s
+}
+
 bookinfo_gateway_manifest() {
+  local official="$ROOT_DIR/manifests/bookinfo/gateway.yaml"
+  local port80="$ROOT_DIR/manifests/bookinfo/gateway-port80.yaml"
+
+  if [[ "${BOOKINFO_GATEWAY_OFFICIAL:-0}" == "1" ]]; then
+    echo "$official"
+    return 0
+  fi
+
+  # k3s Klipper sets LoadBalancer IP on ingress — still need Gateway Service port 80
+  if is_k3s_cluster; then
+    echo "$port80"
+    return 0
+  fi
+
   local typ lb
   typ=$(kubectl -n istio-system get svc istio-ingressgateway -o jsonpath='{.spec.type}' 2>/dev/null || true)
   lb=$(kubectl -n istio-system get svc istio-ingressgateway \
     -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
   if [[ "$typ" == "NodePort" || -z "$lb" ]]; then
-    echo "$ROOT_DIR/manifests/bookinfo/gateway-port80.yaml"
+    echo "$port80"
   else
-    echo "$ROOT_DIR/manifests/bookinfo/gateway.yaml"
+    echo "$official"
   fi
 }
 
