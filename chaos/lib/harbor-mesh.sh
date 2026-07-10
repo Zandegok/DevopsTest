@@ -11,9 +11,69 @@ harbor_mesh_backup() {
   kubectl -n harbor get deployment harbor-registry -o yaml > "$CHAOS_HARBOR_BACKUP_DIR/harbor-registry.yaml"
 }
 
+harbor_mesh_component_from_deploy() {
+  case "$1" in
+    harbor-core) echo core ;;
+    harbor-registry) echo registry ;;
+    *) echo "$1" ;;
+  esac
+}
+
+harbor_mesh_short_grace() {
+  local deploy="$1"
+  kubectl -n harbor patch deployment "$deploy" --type=strategic \
+    -p '{"spec":{"template":{"spec":{"terminationGracePeriodSeconds":30}}}}' >/dev/null
+}
+
+harbor_mesh_delete_stuck_pods() {
+  local component="$1"
+  local newest_rs pod rs
+  newest_rs=$(kubectl -n harbor get rs -l "app=harbor,component=${component}" \
+    --sort-by=.metadata.creationTimestamp \
+    -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null || true)
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    pod=${line%% *}
+    rs=${line#* }
+    if [[ -n "$newest_rs" && "$rs" == "$newest_rs" ]]; then
+      continue
+    fi
+    log_info "Removing old Harbor pod blocking rollout: $pod"
+    kubectl -n harbor delete pod "$pod" --force --grace-period=0 >/dev/null 2>&1 || true
+  done < <(kubectl -n harbor get pods -l "app=harbor,component=${component}" \
+    -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.metadata.ownerReferences[0].name}{"\n"}{end}' 2>/dev/null || true)
+  while IFS= read -r pod; do
+    [[ -z "$pod" ]] && continue
+    log_info "Force deleting terminating Harbor pod: $pod"
+    kubectl -n harbor delete pod "$pod" --force --grace-period=0 >/dev/null 2>&1 || true
+  done < <(kubectl -n harbor get pods -l "app=harbor,component=${component}" --no-headers 2>/dev/null \
+    | awk '$3 ~ /Terminating|Unknown/ {print $1}')
+}
+
+harbor_mesh_wait_rollout() {
+  local deploy="$1"
+  local timeout="${2:-420}"
+  local component elapsed=0 interval=20
+  component=$(harbor_mesh_component_from_deploy "$deploy")
+  while (( elapsed < timeout )); do
+    if kubectl -n harbor rollout status "deployment/$deploy" --timeout=20s >/dev/null 2>&1; then
+      log_pass "Harbor rollout complete: $deploy"
+      return 0
+    fi
+    log_info "Waiting for $deploy rollout (${elapsed}s/${timeout}s)"
+    kubectl -n harbor get pods -l "app=harbor,component=${component}" --no-headers 2>/dev/null || true
+    harbor_mesh_delete_stuck_pods "$component"
+    elapsed=$((elapsed + interval))
+  done
+  log_fail "Harbor rollout stuck: $deploy"
+  kubectl -n harbor get pods -l "app=harbor,component=${component}" -o wide 2>/dev/null || true
+  return 1
+}
+
 harbor_mesh_remove_sidecar() {
   local deploy="$1"
   local patch
+  harbor_mesh_short_grace "$deploy"
   patch=$(cat <<'EOF'
 {
   "spec": {
@@ -92,8 +152,8 @@ harbor_mesh_reset_current() {
   log_info "Resetting any leftover Harbor sidecars before backup"
   harbor_mesh_remove_sidecar harbor-core
   harbor_mesh_remove_sidecar harbor-registry
-  kubectl -n harbor rollout status deployment/harbor-core --timeout=300s
-  kubectl -n harbor rollout status deployment/harbor-registry --timeout=300s
+  harbor_mesh_wait_rollout harbor-core
+  harbor_mesh_wait_rollout harbor-registry
   retry 30 10 check_harbor_health
 }
 
@@ -149,6 +209,7 @@ harbor_mesh_inject_deployment() {
   else
     harbor_mesh_patch_template "$deploy" true ""
   fi
+  harbor_mesh_short_grace "$deploy"
   kubectl -n harbor get deployment "$deploy" -o yaml \
     | istioctl kube-inject -f - \
     | kubectl apply -f -
@@ -171,8 +232,8 @@ harbor_mesh_enable() {
   harbor_mesh_backup
   harbor_mesh_inject_deployment harbor-core "6379,5432"
   harbor_mesh_inject_deployment harbor-registry ""
-  kubectl -n harbor rollout status deployment/harbor-core --timeout=300s
-  kubectl -n harbor rollout status deployment/harbor-registry --timeout=300s
+  harbor_mesh_wait_rollout harbor-core
+  harbor_mesh_wait_rollout harbor-registry
   harbor_registry_mark_http_protocol
   retry 30 10 check_harbor_health
   retry 18 10 harbor_mesh_sidecars_ready
@@ -198,8 +259,7 @@ harbor_mesh_disable() {
   log_info "Removing temporary Istio sidecars from Harbor deployments"
   harbor_mesh_remove_sidecar harbor-core
   harbor_mesh_remove_sidecar harbor-registry
-  kubectl -n harbor rollout restart deployment/harbor-jobservice deployment/harbor-nginx 2>/dev/null || true
-  kubectl -n harbor rollout status deployment/harbor-core --timeout=300s
-  kubectl -n harbor rollout status deployment/harbor-registry --timeout=300s
+  harbor_mesh_wait_rollout harbor-core
+  harbor_mesh_wait_rollout harbor-registry
   retry 30 10 check_harbor_health
 }
