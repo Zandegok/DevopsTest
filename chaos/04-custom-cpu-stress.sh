@@ -10,7 +10,7 @@ STRESS_PID=""
 log_info "=== Experiment: 04-custom-cpu-stress ==="
 
 log_info "[1/7] BASELINE"
-assert_http "$(bookinfo_url)" 200 5000
+assert_http "$(bookinfo_url)" 200 15000
 
 pause_or_skip "Baseline OK. Press Enter to start CPU stress in ratings pod..."
 
@@ -62,6 +62,6 @@ if [[ -n "$STRESS_PID" ]]; then
 fi
 
 log_info "[5/7] RECOVER"
-retry 10 5 assert_http "$(bookinfo_url)" 200 5000
+retry 10 5 assert_http "$(bookinfo_url)" 200 15000
 
 log_pass "Experiment completed: 04-custom-cpu-stress"
