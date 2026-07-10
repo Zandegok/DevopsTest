@@ -5,11 +5,15 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/lib/assert.sh
 source "$ROOT_DIR/scripts/lib/assert.sh"
 
+node_ready() {
+  [[ "$(kubectl get nodes -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}')" == "True" ]]
+}
+
 log_info "Waiting for cluster and workloads..."
 
 retry 60 10 kubectl get nodes >/dev/null
 
-retry 60 10 bash -c '[[ "$(kubectl get nodes -o jsonpath="{.items[0].status.conditions[?(@.type==\"Ready\")].status}")" == "True" ]]'
+retry 60 10 node_ready
 
 log_info "Istio control plane..."
 retry 60 10 kubectl -n istio-system wait --for=condition=available deployment/istiod --timeout=30s

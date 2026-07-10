@@ -14,18 +14,12 @@
 
 - name: Deploy Bookinfo Gateway and VirtualService (k3s/NodePort uses Gateway port 80)
   ansible.builtin.command: >
-    kubectl apply -f {{ playbook_dir }}/../manifests/bookinfo/gateway-port80.yaml
+    kubectl apply -f {{ playbook_dir }}/../manifests/bookinfo/gateway.yaml
     -f {{ playbook_dir }}/../manifests/bookinfo/destination-rules.yaml
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
   register: gateway_apply
   changed_when: "'created' in gateway_apply.stdout or 'configured' in gateway_apply.stdout"
-
-- name: Verify Bookinfo ingress routing
-  ansible.builtin.command: "{{ playbook_dir }}/../scripts/fix-bookinfo-ingress.sh"
-  environment:
-    KUBECONFIG: "{{ kubeconfig }}"
-  changed_when: false
 
 - name: Wait for productpage deployment
   ansible.builtin.command: kubectl rollout status deploy/productpage-v1 --timeout=300s
@@ -60,6 +54,12 @@
 
 - name: Wait for productpage after restart
   ansible.builtin.command: kubectl rollout status deploy/productpage-v1 --timeout=300s
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  changed_when: false
+
+- name: Verify Bookinfo ingress routing
+  ansible.builtin.command: "{{ playbook_dir }}/../scripts/fix-bookinfo-ingress.sh"
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
   changed_when: false

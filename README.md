@@ -9,7 +9,7 @@
 
 ```bash
 git clone <URL-репозитория> chaos-k8s && cd chaos-k8s
-chmod +x setup.sh verify.sh teardown.sh scripts/*.sh chaos/*.sh chaos/lib/*.sh 2>/dev/null || true
+chmod +x setup.sh verify.sh teardown.sh scripts/*.sh scripts/lib/*.sh chaos/*.sh chaos/lib/*.sh 2>/dev/null || true
 ./setup.sh
 ./verify.sh && ./chaos/run-all.sh
 ```
@@ -65,7 +65,7 @@ NodePort назначается **динамически** (Kubernetes 30000–3
 Зафиксировать порты (если нужно для firewall/демо):
 
 ```bash
-HARBOR_NODEPORT=30002 GRAFANA_NODEPORT=30300 ./setup.sh
+BOOKINFO_NODEPORT=31833 HARBOR_NODEPORT=30002 GRAFANA_NODEPORT=30300 ./setup.sh
 ```
 
 ## Что установлено
@@ -74,8 +74,8 @@ HARBOR_NODEPORT=30002 GRAFANA_NODEPORT=30300 ./setup.sh
 |-----------|--------|---------|
 | k3s | официальный install script, Traefik отключён | 1 node |
 | Istio 1.23 | `istioctl install --set profile=demo` | demo profile |
-| Harbor 2.14 | Helm chart `harbor/harbor` | 1 на все компоненты |
-| Bookinfo | официальные манифесты Istio | 1 на сервис |
+| Harbor 2.12 | GitHub chart `goharbor/harbor-helm` v1.16.0 | 1 на все компоненты |
+| Bookinfo | официальный app manifest + k3s Gateway/VirtualService | 1 на сервис |
 | Monitoring | `kube-prometheus-stack` | Grafana NodePort (auto) |
 
 Автоматизация: Ansible playbook [`ansible/site.yml`](ansible/site.yml), вызывается из [`setup.sh`](setup.sh).
@@ -158,11 +158,18 @@ chmod +x scripts/*.sh verify.sh setup.sh teardown.sh chaos/*.sh chaos/lib/*.sh
 ./scripts/update-repo.sh
 ```
 
-**Bookinfo 503?** На k3s нужен Gateway port **80** (не 8080). После обновления репо:
+**Bookinfo 503?** Для k3s/NodePort используется `manifests/bookinfo/gateway.yaml` с Gateway port **80**. Это соответствует Service-порту `istio-ingressgateway` (`http2`, NodePort снаружи). Автофикс:
 
 ```bash
 ./scripts/fix-bookinfo-ingress.sh
 ./verify.sh
+```
+
+Если публичный IP определяется неверно:
+
+```bash
+VM_IP=<public-ip> ./scripts/fix-bookinfo-ingress.sh
+VM_IP=<public-ip> ./verify.sh
 ```
 
 **Harbor / helm.goharbor.io недоступен из РФ?** Chart скачивается с GitHub автоматически. Вручную:

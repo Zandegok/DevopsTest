@@ -10,7 +10,7 @@ run_experiment() {
 
   log_info "=== Experiment: $name ==="
 
-  log_info "[1/8] BASELINE"
+  log_info "[1/5] BASELINE"
   if ! "$ROOT_DIR/chaos/lib/baseline-checks.sh" "$name"; then
     log_fail "Baseline failed for $name"
     return 1
@@ -18,11 +18,11 @@ run_experiment() {
 
   pause_or_skip "Baseline OK. Press Enter before applying fault (check Grafana if DEMO=1)..."
 
-  log_info "[2/8] APPLY FAULT: $manifest"
+  log_info "[2/5] APPLY FAULT: $manifest"
   kubectl apply -f "$manifest"
   sleep 12
 
-  log_info "[3/8] ASSERT FAULT"
+  log_info "[3/5] ASSERT FAULT"
   if ! "$assert_fn"; then
     log_fail "Fault assertion failed for $name"
     kubectl delete -f "$manifest" --ignore-not-found || true
@@ -31,11 +31,11 @@ run_experiment() {
 
   pause_or_skip "Fault active. Press Enter before rollback..."
 
-  log_info "[4/8] ROLLBACK"
+  log_info "[4/5] ROLLBACK"
   kubectl delete -f "$manifest" --ignore-not-found
   sleep 12
 
-  log_info "[5/8] RECOVER"
+  log_info "[5/5] RECOVER"
   if ! "$ROOT_DIR/chaos/lib/baseline-checks.sh" "$name"; then
     log_fail "Recovery failed for $name"
     return 1

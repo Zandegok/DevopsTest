@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /workspace
 COPY . /workspace/
 
-RUN chmod +x setup.sh verify.sh teardown.sh scripts/*.sh chaos/*.sh chaos/lib/*.sh 2>/dev/null || true
+RUN chmod +x setup.sh verify.sh teardown.sh scripts/*.sh scripts/lib/*.sh chaos/*.sh chaos/lib/*.sh 2>/dev/null || true
 
 # Run setup on target VM via SSH, not inside this container:
 #   docker build -t chaos-k8s-deployer docker/

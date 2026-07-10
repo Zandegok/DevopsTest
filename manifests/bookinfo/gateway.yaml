@@ -1,6 +1,7 @@
-# Official Istio release-1.23 bookinfo-gateway.yaml (Gateway + VirtualService).
-# Gateway port 8080 matches the ingressgateway pod listener; external access uses
-# Service port 80 / NodePort (name "http2") — see scripts/lib/assert.sh bookinfo_nodeport().
+# k3s/NodePort Bookinfo ingress.
+# The istio-ingressgateway Service exposes HTTP as service port 80 and maps it
+# to the Envoy listener in the pod. Gateway.port.number must match the Service
+# port for this environment.
 apiVersion: networking.istio.io/v1alpha3
 kind: Gateway
 metadata:
@@ -11,7 +12,7 @@ spec:
     istio: ingressgateway
   servers:
     - port:
-        number: 8080
+        number: 80
         name: http
         protocol: HTTP
       hosts:
@@ -41,6 +42,6 @@ spec:
             prefix: /api/v1/products
       route:
         - destination:
-            host: productpage
+            host: productpage.default.svc.cluster.local
             port:
               number: 9080

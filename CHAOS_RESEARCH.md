@@ -82,7 +82,7 @@
 
 ### Что наблюдали
 
-- Из `harbor-core` pod: запрос к `http://harbor-registry:5000/v2/` — latency > 5s.
+- Из `harbor-core` pod: запрос к `http://harbor-registry:5000/v2/` — latency > 3s (при injected delay 5s).
 - Внешний `/api/v2.0/health` может оставаться 200 (health не всегда ходит в registry) — **важно мониторить внутренние зависимости**.
 - `docker push` / scan jobs в Harbor замедляются или таймаутятся.
 

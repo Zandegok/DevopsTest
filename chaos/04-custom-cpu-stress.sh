@@ -5,6 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/lib/assert.sh
 source "$ROOT_DIR/scripts/lib/assert.sh"
 
+STRESS_PID=""
+
 log_info "=== Experiment: 04-custom-cpu-stress ==="
 
 log_info "[1/7] BASELINE"
@@ -45,7 +47,9 @@ fi
 
 if [[ "$DEGRADED" -eq 0 ]]; then
   log_fail "no observable degradation during CPU stress"
-  wait 2>/dev/null || true
+  if [[ -n "$STRESS_PID" ]]; then
+    wait "$STRESS_PID" 2>/dev/null || true
+  fi
   exit 1
 fi
 
@@ -53,7 +57,9 @@ pause_or_skip "Degradation observed. Press Enter after stress ends..."
 
 log_info "[4/7] WAIT for recovery"
 sleep 30
-wait 2>/dev/null || true
+if [[ -n "$STRESS_PID" ]]; then
+  wait "$STRESS_PID" 2>/dev/null || true
+fi
 
 log_info "[5/7] RECOVER"
 retry 10 5 assert_http "$(bookinfo_url)" 200 5000

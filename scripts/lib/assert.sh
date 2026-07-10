@@ -28,6 +28,10 @@ pause_or_skip() {
 }
 
 vm_ip() {
+  if [[ -n "${VM_IP:-}" ]]; then
+    echo "$VM_IP"
+    return 0
+  fi
   hostname -I 2>/dev/null | awk '{print $1}'
 }
 
@@ -259,54 +263,8 @@ ensure_istio_ingress_nodeport() {
 }
 
 apply_bookinfo_routing() {
-  local manifest="$1"
-  kubectl apply -f "$manifest"
+  kubectl apply -f "$ROOT_DIR/manifests/bookinfo/gateway.yaml"
   kubectl apply -f "$ROOT_DIR/manifests/bookinfo/destination-rules.yaml" >/dev/null 2>&1 || true
-}
-
-clear_bookinfo_faults() {
-  kubectl delete -f "$ROOT_DIR/manifests/istio/faults/" --ignore-not-found 2>/dev/null || true
-}
-
-is_k3s_cluster() {
-  [[ -f /etc/rancher/k3s/k3s.yaml ]] \
-    || command -v k3s >/dev/null 2>&1 \
-    || kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' 2>/dev/null | grep -qi k3s
-}
-
-bookinfo_gateway_manifest() {
-  local official="$ROOT_DIR/manifests/bookinfo/gateway.yaml"
-  local port80="$ROOT_DIR/manifests/bookinfo/gateway-port80.yaml"
-
-  if [[ "${BOOKINFO_GATEWAY_OFFICIAL:-0}" == "1" ]]; then
-    echo "$official"
-    return 0
-  fi
-
-  # k3s Klipper sets LoadBalancer IP on ingress — still need Gateway Service port 80
-  if is_k3s_cluster; then
-    echo "$port80"
-    return 0
-  fi
-
-  local typ lb
-  typ=$(kubectl -n istio-system get svc istio-ingressgateway -o jsonpath='{.spec.type}' 2>/dev/null || true)
-  lb=$(kubectl -n istio-system get svc istio-ingressgateway \
-    -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-  if [[ "$typ" == "NodePort" || -z "$lb" ]]; then
-    echo "$port80"
-  else
-    echo "$official"
-  fi
-}
-
-gateway_manifest_port() {
-  local manifest="$1"
-  if [[ "$manifest" == *gateway-port80* ]]; then
-    echo "80"
-  else
-    echo "8080"
-  fi
 }
 
 restart_istio_ingress() {
@@ -363,76 +321,48 @@ ensure_bookinfo_gateway() {
 }
 
 ensure_bookinfo_ingress() {
-  log_info "ensure_bookinfo_ingress: begin"
-  local official="$ROOT_DIR/manifests/bookinfo/gateway.yaml"
-  local fallback="$ROOT_DIR/manifests/bookinfo/gateway-port80.yaml"
-  local primary alt manifest_port gw_port tries=0 code inpod
+  local gw_port tries code inpod
 
-  if [[ ! -f "$official" || ! -f "$fallback" ]]; then
+  log_info "Bookinfo ingress: applying k3s/NodePort routing"
+
+  if [[ ! -f "$ROOT_DIR/manifests/bookinfo/gateway.yaml" ]]; then
     log_fail "missing Bookinfo gateway manifests under manifests/bookinfo/"
     return 1
   fi
 
   ensure_istio_ingress_nodeport
-  clear_bookinfo_faults
   wait_bookinfo_endpoints
-
-  primary=$(bookinfo_gateway_manifest)
-  if [[ "$primary" == "$fallback" ]]; then
-    alt="$official"
-  else
-    alt="$fallback"
-  fi
-  manifest_port=$(gateway_manifest_port "$primary")
 
   gw_port=$(kubectl -n default get gateway bookinfo-gateway \
     -o jsonpath='{.spec.servers[0].port.number}' 2>/dev/null || true)
 
-  if [[ "$gw_port" != "$manifest_port" ]] || ! kubectl -n default get virtualservice bookinfo >/dev/null 2>&1; then
-    log_info "Bookinfo routing: applying Gateway port ${manifest_port} ($(basename "$primary"))"
-    apply_bookinfo_routing "$primary"
+  if [[ "$gw_port" != "80" ]] || ! kubectl -n default get virtualservice bookinfo >/dev/null 2>&1; then
+    log_info "Bookinfo routing: applying Gateway port 80"
+    apply_bookinfo_routing
   else
-    kubectl apply -f "$primary" >/dev/null
+    kubectl apply -f "$ROOT_DIR/manifests/bookinfo/gateway.yaml" >/dev/null
     kubectl apply -f "$ROOT_DIR/manifests/bookinfo/destination-rules.yaml" >/dev/null 2>&1 || true
   fi
 
   if bookinfo_external_check; then
-    log_pass "Bookinfo ingress OK (external HTTP 200, Gateway port ${manifest_port})"
+    log_pass "Bookinfo ingress OK (external HTTP 200, Gateway port 80)"
     return 0
   fi
 
   code=$(curl_code "$(bookinfo_url)" 15)
-  log_info "external Bookinfo HTTP ${code:-000}, recreating routing and restarting Istio"
+  log_info "external Bookinfo HTTP ${code:-000}; recreating routing and restarting ingress"
 
   kubectl -n default delete gateway bookinfo-gateway virtualservice bookinfo --ignore-not-found
   sleep 3
-  apply_bookinfo_routing "$primary"
+  apply_bookinfo_routing
   restart_istio_ingress
 
   tries=0
   while [[ "$tries" -lt 6 ]]; do
     code=$(curl_code "$(bookinfo_url)" 15)
-    log_info "retry ${tries}/6 external Bookinfo HTTP ${code:-000}"
+    log_info "retry $((tries + 1))/6 external Bookinfo HTTP ${code:-000}"
     if [[ "$code" == "200" ]]; then
-      log_pass "Bookinfo ingress OK after restart (external HTTP 200, Gateway port ${manifest_port})"
-      return 0
-    fi
-    sleep 5
-    tries=$((tries + 1))
-  done
-
-  log_info "primary Gateway port ${manifest_port} failed, trying alternate manifest"
-  kubectl -n default delete gateway bookinfo-gateway virtualservice bookinfo --ignore-not-found
-  sleep 3
-  apply_bookinfo_routing "$alt"
-  restart_istio_ingress
-
-  tries=0
-  while [[ "$tries" -lt 6 ]]; do
-    code=$(curl_code "$(bookinfo_url)" 15)
-    log_info "retry alt ${tries}/6 external Bookinfo HTTP ${code:-000}"
-    if [[ "$code" == "200" ]]; then
-      log_pass "Bookinfo ingress OK (alternate Gateway, external HTTP 200)"
+      log_pass "Bookinfo ingress OK after restart (external HTTP 200, Gateway port 80)"
       return 0
     fi
     sleep 5
