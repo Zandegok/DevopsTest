@@ -13,6 +13,8 @@ MANIFEST="$ROOT_DIR/manifests/istio/faults/03-delay-harbor-core-registry.yaml"
 
 log_info "=== Experiment: 03-delay-harbor-core-registry ==="
 
+harbor_mesh_reset_if_needed
+
 log_info "[1/9] BASELINE"
 "$ROOT_DIR/chaos/lib/baseline-checks.sh" harbor
 

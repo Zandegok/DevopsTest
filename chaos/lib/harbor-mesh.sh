@@ -97,6 +97,19 @@ harbor_mesh_reset_current() {
   retry 30 10 check_harbor_health
 }
 
+harbor_mesh_has_sidecars() {
+  local containers
+  containers=$(kubectl -n harbor get pods -l 'app=harbor,component in (core,registry)' \
+    -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.containers[*].name}{"\n"}{end}' 2>/dev/null || true)
+  echo "$containers" | grep -q 'istio-proxy'
+}
+
+harbor_mesh_reset_if_needed() {
+  if harbor_mesh_has_sidecars; then
+    harbor_mesh_reset_current
+  fi
+}
+
 harbor_mesh_patch_template() {
   local deploy="$1"
   local inject="$2"
@@ -154,7 +167,7 @@ harbor_mesh_enable() {
 
   log_info "Enabling selective Istio sidecars on harbor-core and harbor-registry (istioctl kube-inject)"
   kubectl label namespace harbor istio-injection- --overwrite 2>/dev/null || true
-  harbor_mesh_reset_current
+  harbor_mesh_reset_if_needed
   harbor_mesh_backup
   harbor_mesh_inject_deployment harbor-core "6379,5432"
   harbor_mesh_inject_deployment harbor-registry ""
