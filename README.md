@@ -143,11 +143,10 @@ SKIP_MONITORING=1 ./setup.sh
 
 **Shared VPS (Docker + k3s)?** NodePort k8s (30000+) не пересекается с типичными портами Docker (5432, 8081). Можно держать Postgres/SWAG на хосте параллельно. Для чистой демонстрации: `./teardown.sh && ./setup.sh`.
 
-**Bookinfo 503 снаружи, pods 2/2 Running?** Gateway должен слушать port **80** (не 8080), плюс VirtualService. Автофикс:
+**Bookinfo 503?** Официальный sample Istio использует Gateway port **8080** (pod listener), а снаружи — NodePort порта **http2** (Service :80). Скрипт пробует оба варианта:
 
 ```bash
-git pull
-chmod +x scripts/*.sh
+git pull && chmod +x scripts/*.sh
 ./scripts/fix-bookinfo-ingress.sh
 ./verify.sh
 ```

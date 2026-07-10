@@ -185,12 +185,10 @@ bookinfo_nodeport() {
     echo "$BOOKINFO_NODEPORT"
     return 0
   fi
-  port=$(k8s_nodeport istio-system istio-ingressgateway '@.port==80')
+  # Istio docs: Service port name "http2" is HTTP on port 80
+  port=$(k8s_nodeport istio-system istio-ingressgateway '@.name=="http2"')
   if [[ -z "$port" ]]; then
-    port=$(k8s_nodeport istio-system istio-ingressgateway '@.name=="http"')
-  fi
-  if [[ -z "$port" ]]; then
-    port=$(k8s_nodeport istio-system istio-ingressgateway '@.name=="http2"')
+    port=$(k8s_nodeport istio-system istio-ingressgateway '@.port==80')
   fi
   if [[ -n "$port" ]]; then
     echo "$port"
@@ -250,6 +248,22 @@ grafana_url() {
   echo "http://${ip:-127.0.0.1}:${port:-30300}"
 }
 
+ensure_istio_ingress_nodeport() {
+  local typ np
+  typ=$(kubectl -n istio-system get svc istio-ingressgateway -o jsonpath='{.spec.type}' 2>/dev/null || true)
+  np=$(k8s_nodeport istio-system istio-ingressgateway '@.name=="http2"')
+  if [[ -z "$np" ]] && [[ "$typ" != "NodePort" ]]; then
+    log_info "istio-ingressgateway: switching Service type to NodePort (bare-metal/k3s)"
+    kubectl -n istio-system patch svc istio-ingressgateway -p '{"spec":{"type":"NodePort"}}'
+  fi
+}
+
+apply_bookinfo_routing() {
+  local manifest="$1"
+  kubectl apply -f "$manifest"
+  kubectl apply -f "$ROOT_DIR/manifests/bookinfo/destination-rules.yaml" >/dev/null 2>&1 || true
+}
+
 ingress_self_check() {
   local gw_pod code
   gw_pod=$(kubectl -n istio-system get pod -l app=istio-ingressgateway \
@@ -264,55 +278,65 @@ ingress_self_check() {
   [[ "$code" == "200" ]]
 }
 
+wait_bookinfo_endpoints() {
+  kubectl wait --for=condition=ready endpoints/productpage --timeout=120s >/dev/null 2>&1 || true
+}
+
 ensure_bookinfo_gateway() {
   ensure_bookinfo_ingress
 }
 
 ensure_bookinfo_ingress() {
   local manifest_dir="$ROOT_DIR/manifests/bookinfo"
-  local gw_port code
+  local official="$manifest_dir/gateway.yaml"
+  local fallback="$manifest_dir/gateway-port80.yaml"
+  local code gw_port tries=0
 
-  if [[ ! -f "$manifest_dir/gateway.yaml" ]]; then
-    log_fail "missing $manifest_dir/gateway.yaml"
+  if [[ ! -f "$official" ]]; then
+    log_fail "missing $official"
     return 1
   fi
+
+  ensure_istio_ingress_nodeport
+  wait_bookinfo_endpoints
 
   gw_port=$(kubectl -n default get gateway bookinfo-gateway \
     -o jsonpath='{.spec.servers[0].port.number}' 2>/dev/null || true)
 
-  if [[ "$gw_port" != "80" ]] || ! kubectl -n default get virtualservice bookinfo >/dev/null 2>&1; then
-    log_info "Bookinfo ingress: gateway port=${gw_port:-missing}, reapplying local manifests"
-    kubectl apply -f "$manifest_dir/gateway.yaml" -f "$manifest_dir/virtualservice.yaml"
+  if [[ "$gw_port" != "8080" ]] || ! kubectl -n default get virtualservice bookinfo >/dev/null 2>&1; then
+    log_info "Bookinfo routing: applying official Istio manifest (Gateway port 8080)"
+    apply_bookinfo_routing "$official"
   else
-    kubectl apply -f "$manifest_dir/gateway.yaml" -f "$manifest_dir/virtualservice.yaml" >/dev/null
+    kubectl apply -f "$official" >/dev/null
+    kubectl apply -f "$manifest_dir/destination-rules.yaml" >/dev/null 2>&1 || true
   fi
 
   if ingress_self_check; then
-    log_pass "Bookinfo ingress routes OK (in-gateway check HTTP 200)"
+    log_pass "Bookinfo ingress OK (official Gateway :8080, in-pod HTTP 200)"
     return 0
   fi
 
   code=$(ingress_self_check || true)
-  log_info "ingress self-check HTTP ${code:-000}, recreating Gateway/VS and restarting ingress"
-  kubectl -n default delete gateway bookinfo-gateway virtualservice bookinfo --ignore-not-found
-  sleep 3
-  kubectl apply -f "$manifest_dir/gateway.yaml" -f "$manifest_dir/virtualservice.yaml"
-  kubectl -n istio-system rollout restart deployment/istio-ingressgateway
-  kubectl -n istio-system rollout status deployment/istio-ingressgateway --timeout=180s
+  log_info "official Gateway :8080 returned HTTP ${code:-000}, trying Gateway Service port 80"
 
-  local tries=0
-  while [[ "$tries" -lt 12 ]]; do
-    sleep 5
-    if ingress_self_check; then
-      log_pass "Bookinfo ingress routes OK after restart (HTTP 200)"
-      return 0
-    fi
-    tries=$((tries + 1))
-  done
+  if [[ -f "$fallback" ]]; then
+    apply_bookinfo_routing "$fallback"
+    kubectl -n istio-system rollout restart deployment/istio-ingressgateway
+    kubectl -n istio-system rollout status deployment/istio-ingressgateway --timeout=180s
+    while [[ "$tries" -lt 12 ]]; do
+      sleep 5
+      if ingress_self_check; then
+        log_pass "Bookinfo ingress OK (fallback Gateway :80, in-pod HTTP 200)"
+        return 0
+      fi
+      tries=$((tries + 1))
+    done
+  fi
 
   code=$(ingress_self_check || true)
-  log_fail "Bookinfo ingress still HTTP ${code:-000} after fix"
+  log_fail "Bookinfo ingress still HTTP ${code:-000} (Gateway port $(kubectl -n default get gateway bookinfo-gateway -o jsonpath='{.spec.servers[0].port.number}' 2>/dev/null || echo '?'))"
   kubectl -n default get gateway,virtualservice 2>/dev/null || true
+  kubectl get endpoints productpage 2>/dev/null || true
   return 1
 }
 

@@ -31,6 +31,7 @@
 - name: Install Istio demo profile (low memory)
   ansible.builtin.shell: |
     istioctl install --set profile=demo -y \
+      --set values.gateways.istio-ingressgateway.type=NodePort \
       --set values.global.proxy.resources.requests.memory=64Mi \
       --set values.global.proxy.resources.limits.memory=128Mi \
       --set values.pilot.resources.requests.memory=128Mi \
@@ -42,7 +43,9 @@
     - low_memory_mode | default(false)
 
 - name: Install Istio demo profile
-  ansible.builtin.command: istioctl install --set profile=demo -y
+  ansible.builtin.command: >
+    istioctl install --set profile=demo -y
+    --set values.gateways.istio-ingressgateway.type=NodePort
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
   when:
