@@ -11,27 +11,6 @@ source "$ROOT_DIR/chaos/lib/harbor-mesh.sh"
 
 MANIFEST="$ROOT_DIR/manifests/istio/faults/03-delay-harbor-core-registry.yaml"
 
-fault_assert() {
-  local ms
-  local i
-  local max=0
-  for ((i = 1; i <= 5; i++)); do
-    ms=$(kubectl exec -n harbor deploy/harbor-core -c core -- \
-      sh -c 'curl -sS -o /dev/null -w "%{time_total}" --connect-timeout 5 --max-time 30 http://harbor-registry:5000/v2/ 2>/dev/null' 2>/dev/null \
-      | awk '{printf "%.0f", $1 * 1000}')
-    if [[ "$ms" -gt "$max" ]]; then
-      max=$ms
-    fi
-    sleep 1
-  done
-  if [[ "$max" -gt 3000 ]]; then
-    log_pass "harbor-core -> harbor-registry latency max=${max}ms > 3000ms"
-    return 0
-  fi
-  log_fail "harbor-core -> harbor-registry latency max=${max}ms not > 3000ms"
-  return 1
-}
-
 log_info "=== Experiment: 03-delay-harbor-core-registry ==="
 
 log_info "[1/9] BASELINE"
@@ -41,15 +20,17 @@ pause_or_skip "Baseline OK. Press Enter to enable temporary Harbor mesh for faul
 
 log_info "[2/9] ENABLE selective Harbor sidecars (Redis/DB ports excluded)"
 harbor_mesh_enable
+assert_sidecar_injection harbor 'app=harbor,component=core'
+assert_sidecar_injection harbor 'app=harbor,component=registry'
 
 pause_or_skip "Sidecars enabled. Press Enter to apply fault..."
 
 log_info "[3/9] APPLY FAULT"
 kubectl apply -f "$MANIFEST"
-sleep 12
+sleep 20
 
 log_info "[4/9] ASSERT FAULT"
-if ! fault_assert; then
+if ! assert_mesh_harbor_registry_latency_gt 3000 8; then
   kubectl delete -f "$MANIFEST" --ignore-not-found || true
   harbor_mesh_disable || true
   exit 1

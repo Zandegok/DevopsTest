@@ -7,7 +7,9 @@ spec:
   hosts:
     - harbor-registry
   http:
-    - fault:
+    - match:
+        - port: 5000
+      fault:
         delay:
           percentage:
             value: 100

@@ -147,6 +147,34 @@ measure_mesh_bookinfo_latency_ms() {
     | awk '{printf "%.0f", $1 * 1000}'
 }
 
+measure_mesh_harbor_registry_latency_ms() {
+  kubectl exec -n harbor deploy/harbor-core -c core -- \
+    curl -sS -o /dev/null -w "%{time_total}" --connect-timeout 5 --max-time 30 \
+    http://harbor-registry:5000/v2/ 2>/dev/null \
+    | awk '{printf "%.0f", $1 * 1000}'
+}
+
+assert_mesh_harbor_registry_latency_gt() {
+  local min_ms="$1"
+  local samples="${2:-5}"
+  local i
+  local max_seen=0
+  for ((i = 1; i <= samples; i++)); do
+    local ms
+    ms=$(measure_mesh_harbor_registry_latency_ms)
+    if [[ "$ms" -gt "$max_seen" ]]; then
+      max_seen=$ms
+    fi
+    sleep 1
+  done
+  if [[ "$max_seen" -gt "$min_ms" ]]; then
+    log_pass "harbor-core -> harbor-registry latency max=${max_seen}ms > ${min_ms}ms (${samples} samples)"
+    return 0
+  fi
+  log_fail "harbor-core -> harbor-registry latency max=${max_seen}ms not > ${min_ms}ms (${samples} samples)"
+  return 1
+}
+
 assert_mesh_bookinfo_latency_gt() {
   local min_ms="$1"
   local samples="${2:-5}"
