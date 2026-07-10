@@ -62,15 +62,16 @@ ensure_bookinfo_ingress || log_fail "Bookinfo ingress not ready — run ./script
 
 run_check bookinfo check_bookinfo
 
-if [[ "${SKIP_MONITORING:-0}" == "1" ]] || ! grafana_installed; then
-  log_info "Grafana not installed — skipping check (SKIP_MONITORING=1 or monitoring release missing)"
+reason=$(grafana_skip_reason "$ROOT_DIR" || true)
+if [[ -n "$reason" ]]; then
+  log_info "Grafana skipped ($reason)"
   RESULTS+=("[SKIP] grafana")
   PASS=$((PASS + 1))
 else
   max_ms=10000
   if [[ -f "$ROOT_DIR/.low-memory" ]]; then
     max_ms=30000
-    log_info "Low-memory VM detected ($(cat "$ROOT_DIR/.low-memory") MB) — Grafana check uses extended timeout"
+    log_info "Low-memory VM — Grafana check uses extended timeout (${max_ms}ms)"
   fi
   run_check grafana check_grafana "$max_ms"
 fi

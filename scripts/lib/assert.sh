@@ -293,7 +293,17 @@ grafana_nodeport() {
 }
 
 grafana_installed() {
-  kubectl -n monitoring get svc -l app.kubernetes.io/name=grafana -o name >/dev/null 2>&1
+  grafana_nodeport >/dev/null 2>&1
+}
+
+grafana_skip_reason() {
+  if [[ "${SKIP_MONITORING:-0}" == "1" ]]; then
+    echo "SKIP_MONITORING=1"
+  elif [[ -f "${1:-}/.low-memory" ]]; then
+    echo "low-memory profile (Grafana not deployed)"
+  elif ! grafana_installed; then
+    echo "monitoring release missing or no Grafana NodePort"
+  fi
 }
 
 grafana_url() {
