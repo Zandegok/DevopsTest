@@ -290,10 +290,32 @@ gateway_manifest_port() {
 }
 
 restart_istio_ingress() {
-  kubectl -n istio-system rollout restart deployment/istiod deployment/istio-ingressgateway
-  kubectl -n istio-system rollout status deployment/istiod --timeout=180s
-  kubectl -n istio-system rollout status deployment/istio-ingressgateway --timeout=180s
-  sleep 10
+  log_info "restarting istio-ingressgateway..."
+  kubectl -n istio-system rollout restart deployment/istio-ingressgateway
+  if ! kubectl -n istio-system rollout status deployment/istio-ingressgateway --timeout=120s; then
+    log_info "ingress rollout still in progress (continuing)"
+    kubectl -n istio-system get pods -l app=istio-ingressgateway 2>/dev/null || true
+  fi
+  if [[ "${BOOKINFO_RESTART_ISTIOD:-0}" == "1" ]]; then
+    log_info "restarting istiod (BOOKINFO_RESTART_ISTIOD=1)..."
+    kubectl -n istio-system rollout restart deployment/istiod
+    kubectl -n istio-system rollout status deployment/istiod --timeout=120s || true
+  fi
+  sleep 5
+}
+
+wait_bookinfo_endpoints() {
+  local i eps
+  for ((i = 1; i <= 12; i++)); do
+    eps=$(kubectl get endpoints productpage -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null || true)
+    if [[ -n "$eps" ]]; then
+      log_info "productpage endpoint ready ($eps)"
+      return 0
+    fi
+    log_info "waiting for productpage endpoints (${i}/12)..."
+    sleep 5
+  done
+  log_info "productpage endpoints not found (continuing)"
 }
 
 bookinfo_external_check() {
@@ -316,15 +338,12 @@ ingress_self_check() {
   [[ "$code" == "200" ]]
 }
 
-wait_bookinfo_endpoints() {
-  kubectl wait --for=condition=ready endpoints/productpage --timeout=120s >/dev/null 2>&1 || true
-}
-
 ensure_bookinfo_gateway() {
   ensure_bookinfo_ingress
 }
 
 ensure_bookinfo_ingress() {
+  log_info "ensure_bookinfo_ingress: begin"
   local official="$ROOT_DIR/manifests/bookinfo/gateway.yaml"
   local fallback="$ROOT_DIR/manifests/bookinfo/gateway-port80.yaml"
   local primary alt manifest_port gw_port tries=0 code inpod
@@ -371,8 +390,10 @@ ensure_bookinfo_ingress() {
   restart_istio_ingress
 
   tries=0
-  while [[ "$tries" -lt 18 ]]; do
-    if bookinfo_external_check; then
+  while [[ "$tries" -lt 6 ]]; do
+    code=$(curl_code "$(bookinfo_url)" 15)
+    log_info "retry ${tries}/6 external Bookinfo HTTP ${code:-000}"
+    if [[ "$code" == "200" ]]; then
       log_pass "Bookinfo ingress OK after restart (external HTTP 200, Gateway port ${manifest_port})"
       return 0
     fi
@@ -387,8 +408,10 @@ ensure_bookinfo_ingress() {
   restart_istio_ingress
 
   tries=0
-  while [[ "$tries" -lt 18 ]]; do
-    if bookinfo_external_check; then
+  while [[ "$tries" -lt 6 ]]; do
+    code=$(curl_code "$(bookinfo_url)" 15)
+    log_info "retry alt ${tries}/6 external Bookinfo HTTP ${code:-000}"
+    if [[ "$code" == "200" ]]; then
       log_pass "Bookinfo ingress OK (alternate Gateway, external HTTP 200)"
       return 0
     fi
