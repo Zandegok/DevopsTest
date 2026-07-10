@@ -6,7 +6,7 @@ cd "$ROOT_DIR"
 
 chmod +x setup.sh verify.sh teardown.sh scripts/*.sh scripts/lib/*.sh chaos/*.sh chaos/lib/*.sh 2>/dev/null || true
 
-log() { echo "[setup] $*"; }
+log() { echo "[setup $(date +%H:%M:%S)] $*"; }
 
 if [[ "$(id -u)" -eq 0 ]]; then
   log "Running as root (supported)"
@@ -28,7 +28,8 @@ for bin in curl kubectl helm; do
   fi
 done
 
-log "Running Ansible playbook..."
+log "Running Ansible playbook (each TASK line = progress; Harbor prints [harbor-install] steps)..."
+export ANSIBLE_FORCE_COLOR=1
 ansible-playbook ansible/site.yml
 
 log "Waiting for workloads..."

@@ -6,6 +6,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT_DIR/scripts/lib/assert.sh"
 # shellcheck source=chaos/lib/run-experiment.sh
 source "$ROOT_DIR/chaos/lib/run-experiment.sh"
+# shellcheck source=chaos/lib/harbor-mesh.sh
+source "$ROOT_DIR/chaos/lib/harbor-mesh.sh"
 
 MANIFEST="$ROOT_DIR/manifests/istio/faults/03-delay-harbor-core-registry.yaml"
 
@@ -15,7 +17,7 @@ fault_assert() {
   local max=0
   for ((i = 1; i <= 5; i++)); do
     ms=$(kubectl exec -n harbor deploy/harbor-core -c core -- \
-      sh -c 'curl -sS -o /dev/null -w "%{time_total}" --connect-timeout 5 --max-time 30 http://harbor-registry:5000/v2/ 2>/dev/null || wget -q -O /dev/null -T 30 http://harbor-registry:5000/v2/ && echo 6' 2>/dev/null \
+      sh -c 'curl -sS -o /dev/null -w "%{time_total}" --connect-timeout 5 --max-time 30 http://harbor-registry:5000/v2/ 2>/dev/null' 2>/dev/null \
       | awk '{printf "%.0f", $1 * 1000}')
     if [[ "$ms" -gt "$max" ]]; then
       max=$ms
@@ -30,4 +32,39 @@ fault_assert() {
   return 1
 }
 
-run_experiment "03-delay-harbor-core-registry" "$MANIFEST" fault_assert
+log_info "=== Experiment: 03-delay-harbor-core-registry ==="
+
+log_info "[1/9] BASELINE"
+"$ROOT_DIR/chaos/lib/baseline-checks.sh" harbor
+
+pause_or_skip "Baseline OK. Press Enter to enable temporary Harbor mesh for fault demo..."
+
+log_info "[2/9] ENABLE selective Harbor sidecars (Redis/DB ports excluded)"
+harbor_mesh_enable
+
+pause_or_skip "Sidecars enabled. Press Enter to apply fault..."
+
+log_info "[3/9] APPLY FAULT"
+kubectl apply -f "$MANIFEST"
+sleep 12
+
+log_info "[4/9] ASSERT FAULT"
+if ! fault_assert; then
+  kubectl delete -f "$MANIFEST" --ignore-not-found || true
+  harbor_mesh_disable || true
+  exit 1
+fi
+
+pause_or_skip "Fault active. Press Enter to rollback..."
+
+log_info "[5/9] ROLLBACK FAULT"
+kubectl delete -f "$MANIFEST" --ignore-not-found
+sleep 12
+
+log_info "[6/9] DISABLE temporary Harbor sidecars"
+harbor_mesh_disable
+
+log_info "[7/9] RECOVER"
+"$ROOT_DIR/chaos/lib/baseline-checks.sh" harbor
+
+log_pass "Experiment completed: 03-delay-harbor-core-registry"

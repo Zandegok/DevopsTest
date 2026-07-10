@@ -18,6 +18,8 @@ chmod +x setup.sh verify.sh teardown.sh scripts/*.sh chaos/*.sh chaos/lib/*.sh 2
 
 `setup.sh` (~15–25 мин) устанавливает k3s, Istio, Harbor, Bookinfo, Grafana и в конце сам запускает `verify.sh`.
 
+**Прогресс:** каждая строка Ansible `TASK [...]` — шаг установки; Harbor дополнительно печатает `[harbor-install] progress X/Y`. Во втором терминале: `watch -n 5 kubectl get pods -A`.
+
 Ожидаемый результат:
 
 ```
@@ -110,10 +112,17 @@ kubectl top nodes
 kubectl get pods -A | grep -v Running
 ```
 
-**Harbor не стартует** — подождите до 10 мин, проверьте:
+**Harbor не стартует** — установка печатает строки `[harbor-install HH:MM:SS] progress N/M`. Во втором SSH:
+
 ```bash
-kubectl -n harbor get pods
-kubectl -n harbor describe pod -l component=core
+watch -n 5 kubectl -n harbor get pods
+```
+
+**Harbor core CrashLoopBackOff (Redis)** — namespace `harbor` **не должен** иметь `istio-injection=enabled` (ломает TCP к Redis). Setup снимает label автоматически. Если ломалось раньше:
+
+```bash
+kubectl label namespace harbor istio-injection- --overwrite
+kubectl -n harbor rollout restart deploy/harbor-core deploy/harbor-jobservice
 ```
 
 **Мало RAM (4 GB)?** Пропустите Grafana (~300–500 MB):

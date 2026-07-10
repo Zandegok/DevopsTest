@@ -66,10 +66,3 @@
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
   changed_when: false
-
-- name: Enable Istio injection on harbor namespace (created later if missing)
-  ansible.builtin.command: kubectl label namespace harbor istio-injection=enabled --overwrite
-  environment:
-    KUBECONFIG: "{{ kubeconfig }}"
-  failed_when: false
-  changed_when: false

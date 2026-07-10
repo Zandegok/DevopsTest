@@ -72,7 +72,7 @@
 
 **Скрипт:** `chaos/03-delay-harbor-core-registry.sh`  
 **Манифест:** `manifests/istio/faults/03-delay-harbor-core-registry.yaml`  
-**Механизм:** delay 5s на трафик к `harbor-registry` в namespace `harbor` (mesh traffic).
+**Механизм:** Harbor ставится **без** mesh (стабильность Redis/PostgreSQL). Перед экспериментом скрипт временно включает sidecar только на `harbor-core` и `harbor-registry` (`excludeOutboundPorts: 6379,5432` на core), применяет delay 5s на `harbor-registry`, затем откатывает sidecar.
 
 ### Реальные примеры
 

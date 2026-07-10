@@ -13,11 +13,12 @@
   failed_when: harbor_ns.rc != 0 and 'AlreadyExists' not in harbor_ns.stderr
   changed_when: harbor_ns.rc == 0
 
-- name: Enable Istio injection on harbor namespace
-  ansible.builtin.command: kubectl label namespace harbor istio-injection=enabled --overwrite
+- name: Disable Istio auto-injection on harbor namespace
+  ansible.builtin.command: kubectl label namespace harbor istio-injection- --overwrite
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
   changed_when: false
+  failed_when: false
 
 - name: Prefetch Harbor Helm chart from GitHub
   ansible.builtin.command: "{{ playbook_dir }}/../scripts/prefetch-harbor-chart.sh"
@@ -25,28 +26,14 @@
     HARBOR_CHART_DIR: "{{ harbor_chart_dir }}"
   changed_when: false
 
-- name: Install Harbor from local chart
+- name: Install Harbor from local chart with progress output
   ansible.builtin.command: >
-    helm upgrade --install harbor {{ harbor_chart_dir }}
-    --namespace harbor
-    --values {{ harbor_values }}
-    --wait --timeout 20m
+    {{ playbook_dir }}/../scripts/helm-install-harbor.sh
+    {{ harbor_chart_dir }} {{ harbor_values }} harbor 1200
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
   register: harbor_install
   until: harbor_install.rc == 0
   retries: 2
   delay: 30
-  changed_when: "'has been upgraded' in harbor_install.stdout or 'deployed' in harbor_install.stdout"
-
-- name: Wait for harbor core
-  ansible.builtin.command: kubectl -n harbor rollout status deploy/harbor-core --timeout=600s
-  environment:
-    KUBECONFIG: "{{ kubeconfig }}"
-  changed_when: false
-
-- name: Wait for harbor registry
-  ansible.builtin.command: kubectl -n harbor wait --for=condition=ready pod -l component=registry --timeout=600s
-  environment:
-    KUBECONFIG: "{{ kubeconfig }}"
-  changed_when: false
+  changed_when: harbor_install.rc == 0
