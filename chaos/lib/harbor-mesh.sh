@@ -53,7 +53,7 @@ harbor_mesh_delete_stuck_pods() {
 harbor_mesh_wait_rollout() {
   local deploy="$1"
   local timeout="${2:-420}"
-  local component elapsed=0 interval=20
+  local component elapsed=0 interval=20 tried_reset=0
   component=$(harbor_mesh_component_from_deploy "$deploy")
   while (( elapsed < timeout )); do
     if kubectl -n harbor rollout status "deployment/$deploy" --timeout=20s >/dev/null 2>&1; then
@@ -63,11 +63,41 @@ harbor_mesh_wait_rollout() {
     log_info "Waiting for $deploy rollout (${elapsed}s/${timeout}s)"
     kubectl -n harbor get pods -l "app=harbor,component=${component}" --no-headers 2>/dev/null || true
     harbor_mesh_delete_stuck_pods "$component"
+    if (( elapsed >= 120 && tried_reset == 0 )); then
+      tried_reset=1
+      log_info "Rollout still stuck on $deploy — trying scale-to-zero reset"
+      harbor_mesh_scale_reset "$deploy"
+    fi
     elapsed=$((elapsed + interval))
   done
   log_fail "Harbor rollout stuck: $deploy"
   kubectl -n harbor get pods -l "app=harbor,component=${component}" -o wide 2>/dev/null || true
   return 1
+}
+
+harbor_mesh_scale_reset() {
+  local deploy="$1"
+  log_info "Scale reset for $deploy"
+  kubectl -n harbor scale deployment "$deploy" --replicas=0
+  sleep 8
+  kubectl -n harbor delete pods -l "app=harbor,component=$(harbor_mesh_component_from_deploy "$deploy")" \
+    --force --grace-period=0 >/dev/null 2>&1 || true
+  kubectl -n harbor scale deployment "$deploy" --replicas=1
+}
+
+harbor_mesh_emergency_reset() {
+  log_info "Emergency Harbor reset: scale to 0, remove sidecars, scale back to 1"
+  kubectl -n harbor scale deployment harbor-core harbor-registry --replicas=0
+  sleep 10
+  kubectl -n harbor delete pods -l 'app=harbor,component in (core,registry)' \
+    --force --grace-period=0 >/dev/null 2>&1 || true
+  harbor_mesh_remove_sidecar harbor-core
+  harbor_mesh_remove_sidecar harbor-registry
+  kubectl -n harbor scale deployment harbor-core harbor-registry --replicas=1
+  harbor_mesh_wait_rollout harbor-core 600
+  harbor_mesh_wait_rollout harbor-registry 600
+  retry 30 10 check_harbor_health
+  log_pass "Harbor emergency reset complete"
 }
 
 harbor_mesh_remove_sidecar() {

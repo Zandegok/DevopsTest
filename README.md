@@ -128,6 +128,14 @@ kubectl get pods -A | grep -v Running
 watch -n 5 kubectl -n harbor get pods
 ```
 
+**Harbor rollout stuck after chaos/03?** Два ReplicaSet могут конфликтовать после mesh inject/rollback:
+
+```bash
+./scripts/reset-harbor-mesh.sh
+curl -sS -o /dev/null -w "%{http_code}" http://<VM_IP>:30002/api/v2.0/health
+./chaos/03-delay-harbor-core-registry.sh
+```
+
 **Harbor core CrashLoopBackOff (Redis)** — namespace `harbor` **не должен** иметь `istio-injection=enabled` (ломает TCP к Redis). Setup снимает label автоматически. Если ломалось раньше:
 
 ```bash
