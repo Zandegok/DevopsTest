@@ -250,17 +250,70 @@ grafana_url() {
   echo "http://${ip:-127.0.0.1}:${port:-30300}"
 }
 
+ingress_self_check() {
+  local gw_pod code
+  gw_pod=$(kubectl -n istio-system get pod -l app=istio-ingressgateway \
+    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+  if [[ -z "$gw_pod" ]]; then
+    echo "000"
+    return 1
+  fi
+  code=$(kubectl -n istio-system exec "$gw_pod" -- \
+    curl -sS -o /dev/null -w "%{http_code}" --max-time 10 http://127.0.0.1:8080/productpage 2>/dev/null || echo "000")
+  echo "$code"
+  [[ "$code" == "200" ]]
+}
+
 ensure_bookinfo_gateway() {
-  local current
-  current=$(kubectl -n default get gateway bookinfo-gateway \
+  ensure_bookinfo_ingress
+}
+
+ensure_bookinfo_ingress() {
+  local manifest_dir="$ROOT_DIR/manifests/bookinfo"
+  local gw_port code
+
+  if [[ ! -f "$manifest_dir/gateway.yaml" ]]; then
+    log_fail "missing $manifest_dir/gateway.yaml"
+    return 1
+  fi
+
+  gw_port=$(kubectl -n default get gateway bookinfo-gateway \
     -o jsonpath='{.spec.servers[0].port.number}' 2>/dev/null || true)
-  if [[ "$current" == "80" ]]; then
+
+  if [[ "$gw_port" != "80" ]] || ! kubectl -n default get virtualservice bookinfo >/dev/null 2>&1; then
+    log_info "Bookinfo ingress: gateway port=${gw_port:-missing}, reapplying local manifests"
+    kubectl apply -f "$manifest_dir/gateway.yaml" -f "$manifest_dir/virtualservice.yaml"
+  else
+    kubectl apply -f "$manifest_dir/gateway.yaml" -f "$manifest_dir/virtualservice.yaml" >/dev/null
+  fi
+
+  if ingress_self_check; then
+    log_pass "Bookinfo ingress routes OK (in-gateway check HTTP 200)"
     return 0
   fi
-  log_info "patching bookinfo-gateway port ${current:-unknown} -> 80"
-  kubectl -n default patch gateway bookinfo-gateway --type=json \
-    -p='[{"op":"replace","path":"/spec/servers/0/port/number","value":80},{"op":"replace","path":"/spec/servers/0/port/name","value":"http"}]' \
-    >/dev/null 2>&1
+
+  code=$(ingress_self_check || true)
+  log_info "ingress self-check HTTP ${code:-000}, recreating Gateway/VS and restarting ingress"
+  kubectl -n default delete gateway bookinfo-gateway virtualservice bookinfo --ignore-not-found
+  sleep 3
+  kubectl apply -f "$manifest_dir/gateway.yaml" -f "$manifest_dir/virtualservice.yaml"
+  kubectl -n istio-system rollout restart deployment/istio-ingressgateway
+  kubectl -n istio-system rollout status deployment/istio-ingressgateway --timeout=180s
+
+  local tries=0
+  while [[ "$tries" -lt 12 ]]; do
+    sleep 5
+    if ingress_self_check; then
+      log_pass "Bookinfo ingress routes OK after restart (HTTP 200)"
+      return 0
+    fi
+    tries=$((tries + 1))
+  done
+
+  code=$(ingress_self_check || true)
+  log_fail "Bookinfo ingress still HTTP ${code:-000} after fix"
+  kubectl -n default get gateway,virtualservice 2>/dev/null || true
+  return 1
 }
 
 wait_for_url() {

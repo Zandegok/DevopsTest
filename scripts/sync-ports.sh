@@ -6,8 +6,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/lib/assert.sh
 source "$ROOT_DIR/scripts/lib/assert.sh"
 
-log_info "Ensuring Bookinfo gateway port 80..."
-ensure_bookinfo_gateway || true
+log_info "Fixing Bookinfo ingress (Gateway port 80 + VirtualService)..."
+ensure_bookinfo_ingress || true
 
 if kubectl -n harbor get svc harbor >/dev/null 2>&1; then
   ip=$(vm_ip)

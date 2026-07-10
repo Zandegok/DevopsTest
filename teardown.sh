@@ -12,7 +12,8 @@ helm uninstall harbor -n harbor 2>/dev/null || true
 
 echo "[teardown] Removing Bookinfo..."
 kubectl delete -f https://raw.githubusercontent.com/istio/istio/release-1.23/samples/bookinfo/platform/kube/bookinfo.yaml --ignore-not-found 2>/dev/null || true
-kubectl delete -f https://raw.githubusercontent.com/istio/istio/release-1.23/samples/bookinfo/networking/bookinfo-gateway.yaml --ignore-not-found 2>/dev/null || true
+kubectl delete -f "$ROOT_DIR/manifests/bookinfo/gateway.yaml" --ignore-not-found 2>/dev/null || true
+kubectl delete -f "$ROOT_DIR/manifests/bookinfo/virtualservice.yaml" --ignore-not-found 2>/dev/null || true
 
 echo "[teardown] Uninstalling Istio..."
 if command -v istioctl >/dev/null 2>&1; then

@@ -15,7 +15,7 @@ log_info "Istio control plane..."
 retry 60 10 kubectl -n istio-system wait --for=condition=available deployment/istiod --timeout=30s
 retry 60 10 kubectl -n istio-system wait --for=condition=available deployment/istio-ingressgateway --timeout=30s
 
-ensure_bookinfo_gateway || true
+ensure_bookinfo_ingress || true
 
 log_info "Harbor pods and health..."
 retry 120 15 assert_pods_ready harbor '' || true

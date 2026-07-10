@@ -44,7 +44,9 @@ check_grafana() {
 
 log_info "Starting smoke verification..."
 
-ensure_bookinfo_gateway || true
+if ! ensure_bookinfo_ingress; then
+  log_fail "Bookinfo ingress fix failed — run ./scripts/fix-bookinfo-ingress.sh"
+fi
 
 run_check k3s check_k3s_ready
 run_check istio check_istio_deployments
