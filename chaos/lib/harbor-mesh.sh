@@ -100,7 +100,6 @@ harbor_mesh_drain_deploy() {
   sleep 8
   kubectl -n harbor delete pods -l "app=harbor,component=${component}" \
     --force --grace-period=0 >/dev/null 2>&1 || true
-  harbor_mesh_cleanup_old_replicasets "$component"
 }
 
 harbor_mesh_scale_reset() {
@@ -354,10 +353,6 @@ harbor_wait_healthy() {
     if (( i == 12 || i == 24 || i == 36 )); then
       kubectl -n harbor get pods -l 'app=harbor,component in (core,registry,nginx)' --no-headers 2>/dev/null || true
       kubectl -n harbor logs deploy/harbor-core -c core --tail=5 2>/dev/null || true
-    fi
-    if [[ "$i" -eq 18 ]]; then
-      harbor_restart_dependencies
-      kubectl -n harbor rollout restart deployment/harbor-core 2>/dev/null || true
     fi
     sleep 10
   done
