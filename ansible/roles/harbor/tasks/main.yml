@@ -1,0 +1,56 @@
+---
+- name: Set kubeconfig path
+  ansible.builtin.set_fact:
+    kubeconfig: "/home/{{ ansible_env.SUDO_USER | default(ansible_user_id) }}/.kube/config"
+    harbor_values: "{{ playbook_dir }}/../manifests/harbor/values.yaml"
+
+- name: Create harbor namespace
+  ansible.builtin.command: kubectl create namespace harbor
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  register: harbor_ns
+  failed_when: harbor_ns.rc != 0 and 'AlreadyExists' not in harbor_ns.stderr
+  changed_when: harbor_ns.rc == 0
+
+- name: Enable Istio injection on harbor namespace
+  ansible.builtin.command: kubectl label namespace harbor istio-injection=enabled --overwrite
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  changed_when: false
+
+- name: Add Harbor Helm repo
+  ansible.builtin.command: helm repo add harbor https://helm.goharbor.io
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  register: harbor_repo
+  failed_when: false
+  changed_when: "'has been added' in harbor_repo.stdout"
+
+- name: Update Helm repos
+  ansible.builtin.command: helm repo update
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  changed_when: false
+
+- name: Install Harbor
+  ansible.builtin.command: >
+    helm upgrade --install harbor harbor/harbor
+    --namespace harbor
+    --values {{ harbor_values }}
+    --wait --timeout 15m
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  register: harbor_install
+  changed_when: "'has been upgraded' in harbor_install.stdout or 'deployed' in harbor_install.stdout"
+
+- name: Wait for harbor core
+  ansible.builtin.command: kubectl -n harbor rollout status deploy/harbor-core --timeout=600s
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  changed_when: false
+
+- name: Wait for harbor registry
+  ansible.builtin.command: kubectl -n harbor wait --for=condition=ready pod -l component=registry --timeout=600s
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  changed_when: false

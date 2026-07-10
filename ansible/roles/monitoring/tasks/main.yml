@@ -1,0 +1,44 @@
+---
+- name: Set kubeconfig path
+  ansible.builtin.set_fact:
+    kubeconfig: "/home/{{ ansible_env.SUDO_USER | default(ansible_user_id) }}/.kube/config"
+    monitoring_values: "{{ playbook_dir }}/../manifests/istio/monitoring/values.yaml"
+
+- name: Create monitoring namespace
+  ansible.builtin.command: kubectl create namespace monitoring
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  register: mon_ns
+  failed_when: mon_ns.rc != 0 and 'AlreadyExists' not in mon_ns.stderr
+  changed_when: mon_ns.rc == 0
+
+- name: Add Prometheus community Helm repo
+  ansible.builtin.command: helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  register: prom_repo
+  failed_when: false
+  changed_when: "'has been added' in prom_repo.stdout"
+
+- name: Update Helm repos
+  ansible.builtin.command: helm repo update
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  changed_when: false
+
+- name: Install kube-prometheus-stack
+  ansible.builtin.command: >
+    helm upgrade --install monitoring prometheus-community/kube-prometheus-stack
+    --namespace monitoring
+    --values {{ monitoring_values }}
+    --wait --timeout 15m
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  register: mon_install
+  changed_when: "'has been upgraded' in mon_install.stdout or 'deployed' in mon_install.stdout"
+
+- name: Wait for Grafana deployment
+  ansible.builtin.command: kubectl -n monitoring wait --for=condition=available deployment -l app.kubernetes.io/name=grafana --timeout=600s
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  changed_when: false

@@ -1,0 +1,77 @@
+expose:
+  type: nodePort
+  tls:
+    enabled: false
+  nodePort:
+    ports:
+      http:
+        nodePort: 30002
+
+externalURL: http://localhost:30002
+
+harborAdminPassword: Harbor12345
+
+persistence:
+  enabled: true
+  persistentVolumeClaim:
+    registry:
+      size: 5Gi
+    jobservice:
+      size: 1Gi
+    database:
+      size: 1Gi
+    redis:
+      size: 1Gi
+    trivy:
+      size: 2Gi
+
+portal:
+  replicas: 1
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 50m
+
+core:
+  replicas: 1
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+
+jobservice:
+  replicas: 1
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 50m
+
+registry:
+  replicas: 1
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+
+trivy:
+  enabled: true
+  replicas: 1
+
+database:
+  type: internal
+  internal:
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+
+redis:
+  type: internal
+  internal:
+    resources:
+      requests:
+        memory: 128Mi
+        cpu: 50m
+
+metrics:
+  enabled: true

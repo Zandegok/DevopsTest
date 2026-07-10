@@ -1,0 +1,70 @@
+---
+- name: Set kubeconfig path
+  ansible.builtin.set_fact:
+    kubeconfig: "/home/{{ ansible_env.SUDO_USER | default(ansible_user_id) }}/.kube/config"
+
+- name: Check if istioctl exists
+  ansible.builtin.stat:
+    path: /usr/local/bin/istioctl
+  register: istioctl_bin
+
+- name: Download istioctl
+  ansible.builtin.get_url:
+    url: "https://github.com/istio/istio/releases/download/{{ istio_version }}/istio-{{ istio_version }}-linux-amd64.tar.gz"
+    dest: /tmp/istio.tar.gz
+    mode: "0644"
+  when: not istioctl_bin.stat.exists
+
+- name: Extract istioctl
+  ansible.builtin.unarchive:
+    src: /tmp/istio.tar.gz
+    dest: /tmp
+    remote_src: true
+  when: not istioctl_bin.stat.exists
+
+- name: Install istioctl binary
+  ansible.builtin.copy:
+    src: "/tmp/istio-{{ istio_version }}/bin/istioctl"
+    dest: /usr/local/bin/istioctl
+    mode: "0755"
+    remote_src: true
+  when: not istioctl_bin.stat.exists
+
+- name: Check if Istio is installed
+  ansible.builtin.command: kubectl get ns istio-system
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  register: istio_ns
+  failed_when: false
+  changed_when: false
+
+- name: Install Istio demo profile
+  ansible.builtin.command: istioctl install --set profile=demo -y
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  when: istio_ns.rc != 0
+
+- name: Wait for istiod
+  ansible.builtin.command: kubectl -n istio-system rollout status deploy/istiod --timeout=300s
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  changed_when: false
+
+- name: Wait for ingress gateway
+  ansible.builtin.command: kubectl -n istio-system rollout status deploy/istio-ingressgateway --timeout=300s
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  changed_when: false
+
+- name: Enable Istio injection on default namespace
+  ansible.builtin.command: kubectl label namespace default istio-injection=enabled --overwrite
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  changed_when: false
+
+- name: Enable Istio injection on harbor namespace (created later if missing)
+  ansible.builtin.command: kubectl label namespace harbor istio-injection=enabled --overwrite
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  failed_when: false
+  changed_when: false

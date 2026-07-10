@@ -1,0 +1,19 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: chaos-abort-reviews-to-ratings
+  namespace: default
+spec:
+  hosts:
+    - ratings
+  http:
+    - fault:
+        abort:
+          percentage:
+            value: 100
+          httpStatus: 500
+      route:
+        - destination:
+            host: ratings
+            port:
+              number: 9080

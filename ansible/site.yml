@@ -1,0 +1,17 @@
+all:
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: true
+  vars:
+    k3s_disable_traefik: true
+    istio_version: "1.23.2"
+    harbor_admin_password: "Harbor12345"
+    bookinfo_version: "release-1.23"
+  roles:
+    - preflight
+    - k3s
+    - istio
+    - harbor
+    - bookinfo
+    - monitoring

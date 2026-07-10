@@ -1,0 +1,34 @@
+---
+- name: Require at least 7 GB RAM
+  ansible.builtin.assert:
+    that:
+      - ansible_memtotal_mb | int >= 7000
+    fail_msg: "Need at least 7 GB RAM (found {{ ansible_memtotal_mb }} MB). Use a larger VM."
+
+- name: Require at least 2 CPU cores
+  ansible.builtin.assert:
+    that:
+      - ansible_processor_vcpus | default(2) | int >= 2
+    fail_msg: "Need at least 2 vCPU."
+
+- name: Check free disk on root
+  ansible.builtin.shell: df -BG / | awk 'NR==2 {gsub(/G/,"",$4); print $4}'
+  register: disk_free_gb
+  changed_when: false
+
+- name: Require at least 30 GB free disk
+  ansible.builtin.assert:
+    that:
+      - disk_free_gb.stdout | int >= 30
+    fail_msg: "Need at least 30 GB free disk on / (found {{ disk_free_gb.stdout }}G)."
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name:
+      - curl
+      - ca-certificates
+      - jq
+      - apt-transport-https
+      - gnupg
+    state: present
+    update_cache: true

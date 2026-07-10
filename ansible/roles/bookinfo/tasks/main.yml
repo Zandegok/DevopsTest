@@ -1,0 +1,59 @@
+---
+- name: Set kubeconfig path
+  ansible.builtin.set_fact:
+    kubeconfig: "/home/{{ ansible_env.SUDO_USER | default(ansible_user_id) }}/.kube/config"
+
+- name: Deploy Bookinfo application
+  ansible.builtin.command: >
+    kubectl apply -f
+    https://raw.githubusercontent.com/istio/istio/{{ bookinfo_version }}/samples/bookinfo/platform/kube/bookinfo.yaml
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  register: bookinfo_apply
+  changed_when: "'created' in bookinfo_apply.stdout or 'configured' in bookinfo_apply.stdout"
+
+- name: Deploy Bookinfo gateway
+  ansible.builtin.command: >
+    kubectl apply -f
+    https://raw.githubusercontent.com/istio/istio/{{ bookinfo_version }}/samples/bookinfo/networking/bookinfo-gateway.yaml
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  register: gateway_apply
+  changed_when: "'created' in gateway_apply.stdout or 'configured' in gateway_apply.stdout"
+
+- name: Wait for productpage deployment
+  ansible.builtin.command: kubectl rollout status deploy/productpage-v1 --timeout=300s
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  changed_when: false
+
+- name: Wait for reviews deployment
+  ansible.builtin.command: kubectl rollout status deploy/reviews-v2 --timeout=300s
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  changed_when: false
+
+- name: Wait for ratings deployment
+  ansible.builtin.command: kubectl rollout status deploy/ratings-v1 --timeout=300s
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  changed_when: false
+
+- name: Wait for details deployment
+  ansible.builtin.command: kubectl rollout status deploy/details-v1 --timeout=300s
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  changed_when: false
+
+- name: Restart bookinfo pods to pick up sidecars
+  ansible.builtin.command: kubectl rollout restart deploy/productpage-v1 deploy/reviews-v1 deploy/reviews-v2 deploy/reviews-v3 deploy/ratings-v1 deploy/details-v1
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  changed_when: false
+  failed_when: false
+
+- name: Wait for productpage after restart
+  ansible.builtin.command: kubectl rollout status deploy/productpage-v1 --timeout=300s
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  changed_when: false

@@ -1,0 +1,27 @@
+grafana:
+  enabled: true
+  service:
+    type: NodePort
+    nodePort: 30300
+  adminPassword: prom-operator
+
+prometheus:
+  enabled: true
+  prometheusSpec:
+    retention: 2d
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+
+alertmanager:
+  enabled: false
+
+kubeStateMetrics:
+  enabled: true
+
+nodeExporter:
+  enabled: true
+
+defaultRules:
+  create: true
