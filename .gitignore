@@ -1,4 +1,5 @@
 *.log
+.low-memory
 .DS_Store
 .idea/
 .vscode/

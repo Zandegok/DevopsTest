@@ -2,7 +2,7 @@
 - name: Set kubeconfig path
   ansible.builtin.set_fact:
     kubeconfig: "{{ kubeconfig }}"
-    harbor_values: "{{ playbook_dir }}/../manifests/harbor/values.yaml"
+    harbor_values: "{{ playbook_dir }}/../manifests/harbor/{{ 'values-low.yaml' if (low_memory_mode | default(false)) else 'values.yaml' }}"
 
 - name: Create harbor namespace
   ansible.builtin.command: kubectl create namespace harbor

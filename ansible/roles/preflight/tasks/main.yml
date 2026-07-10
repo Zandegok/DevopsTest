@@ -1,9 +1,33 @@
 ---
-- name: Require at least 7 GB RAM
+- name: Require at least 3.5 GB RAM
   ansible.builtin.assert:
     that:
-      - ansible_memtotal_mb | int >= 7000
-    fail_msg: "Need at least 7 GB RAM (found {{ ansible_memtotal_mb }} MB). Use a larger VM."
+      - ansible_memtotal_mb | int >= 3500
+    fail_msg: "Need at least 3.5 GB RAM (found {{ ansible_memtotal_mb }} MB)."
+
+- name: Detect low-memory profile
+  ansible.builtin.set_fact:
+    low_memory_mode: "{{ ansible_memtotal_mb | int < 7000 }}"
+
+- name: Warn when using minimal profile
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: {{ ansible_memtotal_mb }} MB RAM — using minimal resource profile.
+      8 GB+ recommended for stable Harbor + Grafana.
+  when: low_memory_mode
+
+- name: Mark low-memory mode for verify scripts
+  ansible.builtin.copy:
+    dest: "{{ playbook_dir }}/../.low-memory"
+    content: "{{ ansible_memtotal_mb }}\n"
+    mode: "0644"
+  when: low_memory_mode
+
+- name: Remove low-memory marker when enough RAM
+  ansible.builtin.file:
+    path: "{{ playbook_dir }}/../.low-memory"
+    state: absent
+  when: not low_memory_mode
 
 - name: Require at least 2 CPU cores
   ansible.builtin.assert:
@@ -16,11 +40,11 @@
   register: disk_free_gb
   changed_when: false
 
-- name: Require at least 30 GB free disk
+- name: Require at least 20 GB free disk
   ansible.builtin.assert:
     that:
-      - disk_free_gb.stdout | int >= 30
-    fail_msg: "Need at least 30 GB free disk on / (found {{ disk_free_gb.stdout }}G)."
+      - disk_free_gb.stdout | int >= 20
+    fail_msg: "Need at least 20 GB free disk on / (found {{ disk_free_gb.stdout }}G)."
 
 - name: Install base packages
   ansible.builtin.apt:

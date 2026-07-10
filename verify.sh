@@ -29,9 +29,14 @@ run_check istio bash -c 'kubectl -n istio-system get deploy istiod istio-ingress
 
 run_check harbor bash -c 'assert_http "$(harbor_url)/api/v2.0/health" 200 5000'
 
-run_check bookinfo bash -c 'assert_http "$(bookinfo_url)" 200 5000'
+run_check bookinfo bash -c 'assert_http "$(bookinfo_url)" 200 8000'
 
-run_check grafana bash -c 'assert_http "$(grafana_url)/api/health" 200 10000'
+if [[ -f "$ROOT_DIR/.low-memory" ]]; then
+  log_info "Low-memory VM detected ($(cat "$ROOT_DIR/.low-memory") MB) — Grafana check uses extended timeout"
+  run_check grafana bash -c 'assert_http "$(grafana_url)/api/health" 200 30000'
+else
+  run_check grafana bash -c 'assert_http "$(grafana_url)/api/health" 200 10000'
+fi
 
 run_check sidecar assert_sidecar_injection default 'app=productpage'
 

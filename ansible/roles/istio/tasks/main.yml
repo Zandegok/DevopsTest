@@ -38,11 +38,26 @@
   failed_when: false
   changed_when: false
 
+- name: Install Istio demo profile (low memory)
+  ansible.builtin.shell: |
+    istioctl install --set profile=demo -y \
+      --set values.global.proxy.resources.requests.memory=64Mi \
+      --set values.global.proxy.resources.limits.memory=128Mi \
+      --set values.pilot.resources.requests.memory=128Mi \
+      --set values.pilot.resources.limits.memory=256Mi
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  when:
+    - istio_ns.rc != 0
+    - low_memory_mode | default(false)
+
 - name: Install Istio demo profile
   ansible.builtin.command: istioctl install --set profile=demo -y
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
-  when: istio_ns.rc != 0
+  when:
+    - istio_ns.rc != 0
+    - not (low_memory_mode | default(false))
 
 - name: Wait for istiod
   ansible.builtin.command: kubectl -n istio-system rollout status deploy/istiod --timeout=300s
