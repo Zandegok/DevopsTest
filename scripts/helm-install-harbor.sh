@@ -8,11 +8,21 @@ TIMEOUT="${4:-1200}"
 
 log() { echo "[harbor-install $(date +%H:%M:%S)] $*"; }
 
+ensure_harbor_namespace() {
+  if ! kubectl get namespace "$NAMESPACE" >/dev/null 2>&1; then
+    log "Creating namespace $NAMESPACE"
+    kubectl create namespace "$NAMESPACE"
+  fi
+  kubectl label namespace "$NAMESPACE" istio-injection- --overwrite 2>/dev/null || true
+}
+
+ensure_harbor_namespace
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/lib/assert.sh
 source "$ROOT_DIR/scripts/lib/assert.sh"
 
-helm_args=(upgrade --install harbor "$CHART_DIR" --namespace "$NAMESPACE" --values "$VALUES" --timeout 10m)
+helm_args=(upgrade --install harbor "$CHART_DIR" --namespace "$NAMESPACE" --create-namespace --values "$VALUES" --timeout 10m)
 if [[ -n "${HARBOR_NODEPORT:-}" ]]; then
   helm_args+=(--set-string "expose.nodePort.ports.http.nodePort=${HARBOR_NODEPORT}")
 fi
