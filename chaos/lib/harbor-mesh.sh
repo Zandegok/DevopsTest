@@ -259,18 +259,39 @@ EOF
   kubectl -n harbor patch deployment "$deploy" --type=strategic -p "$patch"
 }
 
+harbor_mesh_apply_injected() {
+  local deploy="$1"
+  local tmpfile tries=0
+  while [[ tries -lt 10 ]]; do
+    tmpfile=$(mktemp)
+    kubectl -n harbor get deployment "$deploy" -o yaml \
+      | istioctl kube-inject -f - > "$tmpfile"
+    if kubectl apply --server-side --force-conflicts --field-manager=chaos-k8s -f "$tmpfile" 2>/dev/null; then
+      rm -f "$tmpfile"
+      return 0
+    fi
+    rm -f "$tmpfile"
+    tries=$((tries + 1))
+    log_info "kube-inject apply conflict on $deploy, retry ${tries}/10"
+    sleep 5
+  done
+  log_fail "Failed to apply kube-inject manifest for $deploy"
+  return 1
+}
+
 harbor_mesh_inject_deployment() {
   local deploy="$1"
   local exclude_ports="${2:-}"
+  harbor_mesh_use_recreate_strategy "$deploy"
+  harbor_mesh_drain_deploy "$deploy"
   if [[ -n "$exclude_ports" ]]; then
     harbor_mesh_patch_template "$deploy" true "$exclude_ports"
   else
     harbor_mesh_patch_template "$deploy" true ""
   fi
   harbor_mesh_short_grace "$deploy"
-  kubectl -n harbor get deployment "$deploy" -o yaml \
-    | istioctl kube-inject -f - \
-    | kubectl apply -f -
+  harbor_mesh_apply_injected "$deploy"
+  kubectl -n harbor scale deployment "$deploy" --replicas=1
 }
 
 harbor_mesh_sidecars_ready() {
