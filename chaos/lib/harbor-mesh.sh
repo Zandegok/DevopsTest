@@ -75,22 +75,48 @@ harbor_mesh_wait_rollout() {
   return 1
 }
 
+harbor_mesh_use_recreate_strategy() {
+  local deploy="$1"
+  kubectl -n harbor patch deployment "$deploy" --type=strategic \
+    -p '{"spec":{"strategy":{"type":"Recreate","rollingUpdate":null}}}' >/dev/null
+}
+
+harbor_mesh_cleanup_old_replicasets() {
+  local component="$1"
+  local rs
+  while IFS= read -r rs; do
+    [[ -z "$rs" ]] && continue
+    log_info "Deleting old Harbor replicaset: $rs"
+    kubectl -n harbor delete "$rs" --ignore-not-found >/dev/null 2>&1 || true
+  done < <(kubectl -n harbor get rs -l "app=harbor,component=${component}" \
+    --sort-by=.metadata.creationTimestamp -o name 2>/dev/null | head -n -1)
+}
+
+harbor_mesh_drain_deploy() {
+  local deploy="$1"
+  local component
+  component=$(harbor_mesh_component_from_deploy "$deploy")
+  kubectl -n harbor scale deployment "$deploy" --replicas=0
+  sleep 8
+  kubectl -n harbor delete pods -l "app=harbor,component=${component}" \
+    --force --grace-period=0 >/dev/null 2>&1 || true
+  harbor_mesh_cleanup_old_replicasets "$component"
+}
+
 harbor_mesh_scale_reset() {
   local deploy="$1"
   log_info "Scale reset for $deploy"
-  kubectl -n harbor scale deployment "$deploy" --replicas=0
-  sleep 8
-  kubectl -n harbor delete pods -l "app=harbor,component=$(harbor_mesh_component_from_deploy "$deploy")" \
-    --force --grace-period=0 >/dev/null 2>&1 || true
+  harbor_mesh_drain_deploy "$deploy"
+  harbor_mesh_use_recreate_strategy "$deploy"
   kubectl -n harbor scale deployment "$deploy" --replicas=1
 }
 
 harbor_mesh_emergency_reset() {
-  log_info "Emergency Harbor reset: scale to 0, remove sidecars, scale back to 1"
-  kubectl -n harbor scale deployment harbor-core harbor-registry --replicas=0
-  sleep 10
-  kubectl -n harbor delete pods -l 'app=harbor,component in (core,registry)' \
-    --force --grace-period=0 >/dev/null 2>&1 || true
+  log_info "Emergency Harbor reset: Recreate strategy, scale to 0, remove sidecars, scale back to 1"
+  harbor_mesh_use_recreate_strategy harbor-core
+  harbor_mesh_use_recreate_strategy harbor-registry
+  harbor_mesh_drain_deploy harbor-core
+  harbor_mesh_drain_deploy harbor-registry
   harbor_mesh_remove_sidecar harbor-core
   harbor_mesh_remove_sidecar harbor-registry
   kubectl -n harbor scale deployment harbor-core harbor-registry --replicas=1
