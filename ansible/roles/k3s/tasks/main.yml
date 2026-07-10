@@ -39,10 +39,12 @@
     mode: "0600"
 
 - name: Install kubectl
-  ansible.builtin.get_url:
-    url: "https://dl.k8s.io/release/v1.30.4/bin/linux/amd64/kubectl"
-    dest: /usr/local/bin/kubectl
-    mode: "0755"
+  ansible.builtin.shell: |
+    {{ playbook_dir }}/../scripts/fetch-with-retry.sh /usr/local/bin/kubectl \
+      https://dl.k8s.io/release/v1.30.4/bin/linux/amd64/kubectl
+    chmod 0755 /usr/local/bin/kubectl
+  args:
+    creates: /usr/local/bin/kubectl
 
 - name: Install Helm
   ansible.builtin.shell: |

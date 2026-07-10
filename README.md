@@ -116,6 +116,12 @@ kubectl -n harbor get pods
 kubectl -n harbor describe pod -l component=core
 ```
 
+**Таймаут скачивания Istio/GitHub** — повторите или скачайте вручную:
+```bash
+./scripts/prefetch-istio.sh
+./setup.sh
+```
+
 **verify.sh FAIL на bookinfo** — дождитесь sidecar injection:
 ```bash
 kubectl get pod -l app=productpage

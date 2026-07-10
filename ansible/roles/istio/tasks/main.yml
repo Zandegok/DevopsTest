@@ -8,27 +8,17 @@
     path: /usr/local/bin/istioctl
   register: istioctl_bin
 
-- name: Download istioctl
-  ansible.builtin.get_url:
-    url: "https://github.com/istio/istio/releases/download/{{ istio_version }}/istio-{{ istio_version }}-linux-amd64.tar.gz"
-    dest: /tmp/istio.tar.gz
-    mode: "0644"
+- name: Prefetch Istio CLI with retries
+  ansible.builtin.command: "{{ playbook_dir }}/../scripts/prefetch-istio.sh"
+  environment:
+    ISTIO_VERSION: "{{ istio_version }}"
   when: not istioctl_bin.stat.exists
 
-- name: Extract istioctl
-  ansible.builtin.unarchive:
-    src: /tmp/istio.tar.gz
-    dest: /tmp
-    remote_src: true
-  when: not istioctl_bin.stat.exists
-
-- name: Install istioctl binary
-  ansible.builtin.copy:
-    src: "/tmp/istio-{{ istio_version }}/bin/istioctl"
-    dest: /usr/local/bin/istioctl
-    mode: "0755"
-    remote_src: true
-  when: not istioctl_bin.stat.exists
+- name: Verify istioctl installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/istioctl
+  register: istioctl_bin_after
+  failed_when: not istioctl_bin_after.stat.exists
 
 - name: Check if Istio is installed
   ansible.builtin.command: kubectl get ns istio-system
