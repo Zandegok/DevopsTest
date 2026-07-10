@@ -18,29 +18,29 @@
     KUBECONFIG: "{{ kubeconfig }}"
   changed_when: false
 
-- name: Add Harbor Helm repo
-  ansible.builtin.command: helm repo add harbor https://helm.goharbor.io
+- name: Ensure Harbor Helm repository
+  ansible.builtin.command: "{{ playbook_dir }}/../scripts/helm-ensure-repo.sh harbor https://helm.goharbor.io"
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
   register: harbor_repo
-  failed_when: false
-  changed_when: "'has been added' in harbor_repo.stdout"
-
-- name: Update Helm repos
-  ansible.builtin.command: helm repo update
-  environment:
-    KUBECONFIG: "{{ kubeconfig }}"
+  until: harbor_repo.rc == 0
+  retries: 3
+  delay: 15
   changed_when: false
 
 - name: Install Harbor
   ansible.builtin.command: >
     helm upgrade --install harbor harbor/harbor
+    --repo https://helm.goharbor.io
     --namespace harbor
     --values {{ harbor_values }}
     --wait --timeout 15m
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
   register: harbor_install
+  until: harbor_install.rc == 0
+  retries: 2
+  delay: 30
   changed_when: "'has been upgraded' in harbor_install.stdout or 'deployed' in harbor_install.stdout"
 
 - name: Wait for harbor core

@@ -12,29 +12,31 @@
   failed_when: mon_ns.rc != 0 and 'AlreadyExists' not in mon_ns.stderr
   changed_when: mon_ns.rc == 0
 
-- name: Add Prometheus community Helm repo
-  ansible.builtin.command: helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+- name: Ensure Prometheus Helm repository
+  ansible.builtin.command: >
+    {{ playbook_dir }}/../scripts/helm-ensure-repo.sh prometheus-community
+    https://prometheus-community.github.io/helm-charts
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
   register: prom_repo
-  failed_when: false
-  changed_when: "'has been added' in prom_repo.stdout"
-
-- name: Update Helm repos
-  ansible.builtin.command: helm repo update
-  environment:
-    KUBECONFIG: "{{ kubeconfig }}"
+  until: prom_repo.rc == 0
+  retries: 3
+  delay: 15
   changed_when: false
 
 - name: Install kube-prometheus-stack
   ansible.builtin.command: >
     helm upgrade --install monitoring prometheus-community/kube-prometheus-stack
+    --repo https://prometheus-community.github.io/helm-charts
     --namespace monitoring
     --values {{ monitoring_values }}
     --wait --timeout 15m
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
   register: mon_install
+  until: mon_install.rc == 0
+  retries: 2
+  delay: 30
   changed_when: "'has been upgraded' in mon_install.stdout or 'deployed' in mon_install.stdout"
 
 - name: Wait for Grafana deployment
