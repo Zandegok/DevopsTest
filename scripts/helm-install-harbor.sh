@@ -56,6 +56,7 @@ sync_harbor_external_url || true
 elapsed=0
 interval=10
 max=$TIMEOUT
+health_ok_streak=0
 
 while [[ "$elapsed" -lt "$max" ]]; do
   total=$(kubectl -n "$NAMESPACE" get pods --no-headers 2>/dev/null | wc -l | tr -d ' ')
@@ -64,9 +65,21 @@ while [[ "$elapsed" -lt "$max" ]]; do
   step=$((elapsed / interval + 1))
   max_steps=$((max / interval))
   log "progress ${step}/${max_steps}: pods ready ${running}/${total}, health HTTP ${health}, url $(harbor_url)"
+  if [[ "$health" == "200" ]]; then
+    health_ok_streak=$((health_ok_streak + 1))
+  else
+    health_ok_streak=0
+  fi
   if [[ "$total" -gt 0 ]] && [[ "$running" -eq "$total" ]] && [[ "$health" == "200" ]]; then
-    log "Harbor is ready"
+    log "Harbor is ready (all pods ready)"
     exit 0
+  fi
+  if [[ "$health_ok_streak" -ge 6 ]]; then
+    log "Harbor is ready (health HTTP 200 for ${health_ok_streak} consecutive checks; some pods may still be starting on low-memory VM)"
+    exit 0
+  fi
+  if (( step % 12 == 0 )); then
+    kubectl -n "$NAMESPACE" get pods --no-headers 2>/dev/null | awk '$2 !~ /^([0-9]+)\/\1$/ || $3 != "Running" {print "  not-ready:", $0}' || true
   fi
   sleep "$interval"
   elapsed=$((elapsed + interval))
