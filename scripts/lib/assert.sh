@@ -55,6 +55,11 @@ curl_code() {
   curl -sS -o /dev/null -w "%{http_code}" --connect-timeout 5 --max-time "${2:-30}" "$url" 2>/dev/null || echo "000"
 }
 
+curl_body() {
+  local url="$1"
+  curl -sS --connect-timeout 5 --max-time "${2:-15}" "$url" 2>/dev/null || true
+}
+
 measure_latency_ms() {
   local url="$1"
   local timeout="${2:-30}"
@@ -267,6 +272,10 @@ apply_bookinfo_routing() {
   kubectl apply -f "$ROOT_DIR/manifests/bookinfo/destination-rules.yaml" >/dev/null 2>&1 || true
 }
 
+delete_bookinfo_routing() {
+  kubectl -n default delete gateway/bookinfo-gateway virtualservice/bookinfo --ignore-not-found
+}
+
 restart_istio_ingress() {
   log_info "restarting istio-ingressgateway..."
   kubectl -n istio-system rollout restart deployment/istio-ingressgateway
@@ -316,6 +325,26 @@ ingress_self_check() {
   [[ "$code" == "200" ]]
 }
 
+dump_bookinfo_ingress_debug() {
+  local url body gw_pod
+  url="$(bookinfo_url)"
+  body=$(curl_body "$url" 10 | tr '\n' ' ' | cut -c1-240)
+  log_info "external body: ${body:-<empty>}"
+
+  gw_pod=$(kubectl -n istio-system get pod -l app=istio-ingressgateway \
+    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+  if [[ -n "$gw_pod" ]]; then
+    body=$(kubectl -n istio-system exec "$gw_pod" -- \
+      curl -sS --max-time 10 http://127.0.0.1:8080/productpage 2>/dev/null | tr '\n' ' ' | cut -c1-240 || true)
+    log_info "in-gateway body: ${body:-<empty>}"
+  fi
+
+  kubectl -n default get gateway/bookinfo-gateway virtualservice/bookinfo -o yaml 2>/dev/null | sed -n '1,120p' || true
+  if command -v istioctl >/dev/null 2>&1; then
+    istioctl proxy-config routes -n istio-system deploy/istio-ingressgateway 2>/dev/null | sed -n '1,80p' || true
+  fi
+}
+
 ensure_bookinfo_gateway() {
   ensure_bookinfo_ingress
 }
@@ -352,10 +381,11 @@ ensure_bookinfo_ingress() {
   code=$(curl_code "$(bookinfo_url)" 15)
   log_info "external Bookinfo HTTP ${code:-000}; recreating routing and restarting ingress"
 
-  kubectl -n default delete gateway bookinfo-gateway virtualservice bookinfo --ignore-not-found
+  delete_bookinfo_routing
   sleep 3
   apply_bookinfo_routing
   restart_istio_ingress
+  sleep 10
 
   tries=0
   while [[ "$tries" -lt 6 ]]; do
@@ -376,6 +406,7 @@ ensure_bookinfo_ingress() {
   kubectl -n istio-system get svc istio-ingressgateway 2>/dev/null || true
   kubectl -n default get gateway,virtualservice 2>/dev/null || true
   kubectl get endpoints productpage 2>/dev/null || true
+  dump_bookinfo_ingress_debug
   return 1
 }
 
