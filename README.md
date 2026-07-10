@@ -143,10 +143,24 @@ SKIP_MONITORING=1 ./setup.sh
 
 **Shared VPS (Docker + k3s)?** NodePort k8s (30000+) не пересекается с типичными портами Docker (5432, 8081). Можно держать Postgres/SWAG на хосте параллельно. Для чистой демонстрации: `./teardown.sh && ./setup.sh`.
 
-**Bookinfo 503?** Официальный sample Istio использует Gateway port **8080** (pod listener), а снаружи — NodePort порта **http2** (Service :80). Скрипт пробует оба варианта:
+**git pull blocked (local changes)?** На VPS не коммитьте правки в scripts — сбросьте и обновите:
 
 ```bash
-git pull && chmod +x scripts/*.sh
+cd /opt/swag/chaos-k8s
+git checkout -- scripts/sync-ports.sh scripts/prefetch-istio.sh
+git pull
+chmod +x scripts/*.sh verify.sh setup.sh teardown.sh chaos/*.sh chaos/lib/*.sh
+```
+
+Или одной командой (после первого успешного pull):
+
+```bash
+./scripts/update-repo.sh
+```
+
+**Bookinfo 503?** На k3s нужен Gateway port **80** (не 8080). После обновления репо:
+
+```bash
 ./scripts/fix-bookinfo-ingress.sh
 ./verify.sh
 ```
