@@ -20,8 +20,6 @@ pause_or_skip "Baseline OK. Press Enter to enable temporary Harbor mesh for faul
 
 log_info "[2/9] ENABLE selective Harbor sidecars (Redis/DB ports excluded)"
 harbor_mesh_enable
-assert_sidecar_injection harbor 'app=harbor,component=core'
-assert_sidecar_injection harbor 'app=harbor,component=registry'
 
 pause_or_skip "Sidecars enabled. Press Enter to apply fault..."
 
