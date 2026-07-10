@@ -10,7 +10,7 @@
 
 **Скрипт:** `chaos/01-delay-user-to-app.sh`  
 **Манифест:** `manifests/istio/faults/01-delay-user-to-app.yaml`  
-**Механизм:** Istio `VirtualService` fault `delay: 7s` на маршрут `/productpage` через `bookinfo-gateway`.
+**Механизм:** Istio `VirtualService` fault `delay: 7s` на host `productpage`; проверка идёт от mesh-клиента внутри кластера. Публичный URL Bookinfo при этом остаётся доступен через `productpage-nodeport`.
 
 ### Реальные примеры
 
@@ -20,7 +20,7 @@
 
 ### Что наблюдали
 
-- `curl` к `/productpage`: latency > 7s (автопроверка `assert_latency_gt 5000`).
+- mesh-запрос к `/productpage`: latency > 7s (автопроверка `assert_mesh_bookinfo_latency_gt 5000`).
 - Grafana / Prometheus: рост `istio_request_duration_milliseconds` bucket `le="+Inf"` для `destination_service_name="productpage"`.
 - HTTP 200 сохраняется — **silent degradation**, мониторинг только по latency.
 

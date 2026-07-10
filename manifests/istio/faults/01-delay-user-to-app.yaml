@@ -5,9 +5,7 @@ metadata:
   namespace: default
 spec:
   hosts:
-    - "*"
-  gateways:
-    - bookinfo-gateway
+    - productpage
   http:
     - match:
         - uri:

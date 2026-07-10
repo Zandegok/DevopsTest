@@ -16,6 +16,7 @@
   ansible.builtin.command: >
     kubectl apply -f {{ playbook_dir }}/../manifests/bookinfo/gateway.yaml
     -f {{ playbook_dir }}/../manifests/bookinfo/destination-rules.yaml
+    -f {{ playbook_dir }}/../manifests/bookinfo/productpage-nodeport.yaml
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
   register: gateway_apply

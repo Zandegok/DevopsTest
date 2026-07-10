@@ -140,6 +140,34 @@ assert_latency_gt() {
   return 1
 }
 
+measure_mesh_bookinfo_latency_ms() {
+  kubectl exec deploy/ratings-v1 -c ratings -- \
+    curl -sS -o /dev/null -w "%{time_total}" --connect-timeout 5 --max-time 120 \
+    http://productpage:9080/productpage 2>/dev/null \
+    | awk '{printf "%.0f", $1 * 1000}'
+}
+
+assert_mesh_bookinfo_latency_gt() {
+  local min_ms="$1"
+  local samples="${2:-5}"
+  local i
+  local max_seen=0
+  for ((i = 1; i <= samples; i++)); do
+    local ms
+    ms=$(measure_mesh_bookinfo_latency_ms)
+    if [[ "$ms" -gt "$max_seen" ]]; then
+      max_seen=$ms
+    fi
+    sleep 1
+  done
+  if [[ "$max_seen" -gt "$min_ms" ]]; then
+    log_pass "mesh productpage latency max=${max_seen}ms > ${min_ms}ms (${samples} samples)"
+    return 0
+  fi
+  log_fail "mesh productpage latency max=${max_seen}ms not > ${min_ms}ms (${samples} samples)"
+  return 1
+}
+
 assert_body_contains() {
   local url="$1"
   local needle="$2"
@@ -194,8 +222,11 @@ bookinfo_nodeport() {
     echo "$BOOKINFO_NODEPORT"
     return 0
   fi
-  # Istio docs: Service port name "http2" is HTTP on port 80
-  port=$(k8s_nodeport istio-system istio-ingressgateway '@.name=="http2"')
+  port=$(k8s_nodeport default productpage-nodeport '@.name=="http"')
+  if [[ -z "$port" ]]; then
+    # Compatibility with older installs before productpage-nodeport existed.
+    port=$(k8s_nodeport istio-system istio-ingressgateway '@.name=="http2"')
+  fi
   if [[ -z "$port" ]]; then
     port=$(k8s_nodeport istio-system istio-ingressgateway '@.port==80')
   fi
@@ -208,6 +239,16 @@ bookinfo_url() {
   local ip port
   ip=$(vm_ip)
   port=$(bookinfo_nodeport || true)
+  echo "http://${ip:-127.0.0.1}:${port:-30080}/productpage"
+}
+
+bookinfo_ingress_url() {
+  local ip port
+  ip=$(vm_ip)
+  port=$(k8s_nodeport istio-system istio-ingressgateway '@.name=="http2"')
+  if [[ -z "$port" ]]; then
+    port=$(k8s_nodeport istio-system istio-ingressgateway '@.port==80')
+  fi
   echo "http://${ip:-127.0.0.1}:${port:-30080}/productpage"
 }
 
@@ -269,6 +310,7 @@ ensure_istio_ingress_nodeport() {
 
 apply_bookinfo_routing() {
   kubectl apply -f "$ROOT_DIR/manifests/bookinfo/gateway.yaml"
+  kubectl apply -f "$ROOT_DIR/manifests/bookinfo/productpage-nodeport.yaml"
   kubectl apply -f "$ROOT_DIR/manifests/bookinfo/destination-rules.yaml" >/dev/null 2>&1 || true
 }
 
@@ -308,6 +350,12 @@ wait_bookinfo_endpoints() {
 bookinfo_external_check() {
   local code
   code=$(curl_code "$(bookinfo_url)" 15)
+  [[ "$code" == "200" ]]
+}
+
+bookinfo_ingress_check() {
+  local code
+  code=$(curl_code "$(bookinfo_ingress_url)" 15)
   [[ "$code" == "200" ]]
 }
 
@@ -370,21 +418,25 @@ ensure_bookinfo_ingress() {
     apply_bookinfo_routing
   else
     kubectl apply -f "$ROOT_DIR/manifests/bookinfo/gateway.yaml" >/dev/null
+    kubectl apply -f "$ROOT_DIR/manifests/bookinfo/productpage-nodeport.yaml" >/dev/null
     kubectl apply -f "$ROOT_DIR/manifests/bookinfo/destination-rules.yaml" >/dev/null 2>&1 || true
   fi
 
   if bookinfo_external_check; then
-    log_pass "Bookinfo ingress OK (external HTTP 200, Gateway port 80)"
+    log_pass "Bookinfo external access OK (productpage NodePort HTTP 200)"
+    if ! bookinfo_ingress_check; then
+      log_info "Istio ingress still returns HTTP $(curl_code "$(bookinfo_ingress_url)" 10); using direct productpage NodePort on this VPS"
+    fi
     return 0
   fi
 
   code=$(curl_code "$(bookinfo_url)" 15)
-  log_info "external Bookinfo HTTP ${code:-000}; recreating routing and restarting ingress"
+  log_info "productpage NodePort HTTP ${code:-000}; recreating Bookinfo services"
 
+  kubectl -n default delete service/productpage-nodeport --ignore-not-found
   delete_bookinfo_routing
   sleep 3
   apply_bookinfo_routing
-  restart_istio_ingress
   sleep 10
 
   tries=0
@@ -392,7 +444,7 @@ ensure_bookinfo_ingress() {
     code=$(curl_code "$(bookinfo_url)" 15)
     log_info "retry $((tries + 1))/6 external Bookinfo HTTP ${code:-000}"
     if [[ "$code" == "200" ]]; then
-      log_pass "Bookinfo ingress OK after restart (external HTTP 200, Gateway port 80)"
+      log_pass "Bookinfo external access OK after service recreate (productpage NodePort HTTP 200)"
       return 0
     fi
     sleep 5

@@ -52,7 +52,7 @@ DEMO=1 ./chaos/03-delay-harbor-core-registry.sh
 
 | Сервис   | URL | Логин |
 |----------|-----|-------|
-| Bookinfo | `http://<VM_IP>:<nodePort>/productpage` | — |
+| Bookinfo | `http://<VM_IP>:<nodePort>/productpage` (`productpage-nodeport`) | — |
 | Harbor   | `http://<VM_IP>:<nodePort>` | admin / Harbor12345 |
 | Grafana  | `http://<VM_IP>:<nodePort>` | admin / prom-operator |
 
@@ -75,7 +75,7 @@ BOOKINFO_NODEPORT=31833 HARBOR_NODEPORT=30002 GRAFANA_NODEPORT=30300 ./setup.sh
 | k3s | официальный install script, Traefik отключён | 1 node |
 | Istio 1.23 | `istioctl install --set profile=demo` | demo profile |
 | Harbor 2.12 | GitHub chart `goharbor/harbor-helm` v1.16.0 | 1 на все компоненты |
-| Bookinfo | официальный app manifest + k3s Gateway/VirtualService | 1 на сервис |
+| Bookinfo | официальный app manifest + direct NodePort + Istio mesh routes | 1 на сервис |
 | Monitoring | `kube-prometheus-stack` | Grafana NodePort (auto) |
 
 Автоматизация: Ansible playbook [`ansible/site.yml`](ansible/site.yml), вызывается из [`setup.sh`](setup.sh).
@@ -96,7 +96,7 @@ CHAOS_RESEARCH.md — анализ сценариев и защита
 
 | Скрипт | Тип | Описание |
 |--------|-----|----------|
-| `01-delay-user-to-app.sh` | Network delay | 7s задержка на `/productpage` через ingress |
+| `01-delay-user-to-app.sh` | Network delay | 7s задержка на `/productpage` для mesh-клиента |
 | `02-abort-reviews-to-ratings.sh` | HTTP 500 | abort 500 на сервис `ratings` |
 | `03-delay-harbor-core-registry.sh` | Harbor delay | 5s между `harbor-core` и `harbor-registry` |
 | `04-custom-cpu-stress.sh` | Host failure (бонус) | CPU stress в pod `ratings` |
@@ -158,7 +158,7 @@ chmod +x scripts/*.sh verify.sh setup.sh teardown.sh chaos/*.sh chaos/lib/*.sh
 ./scripts/update-repo.sh
 ```
 
-**Bookinfo 503?** Для k3s/NodePort используется `manifests/bookinfo/gateway.yaml` с Gateway port **80**. Это соответствует Service-порту `istio-ingressgateway` (`http2`, NodePort снаружи). Автофикс:
+**Bookinfo 503?** Публичный доступ к Bookinfo идёт через отдельный `productpage-nodeport`, чтобы не зависеть от flannel/ingress pod-to-pod маршрута на маленьком VPS. Автофикс:
 
 ```bash
 ./scripts/fix-bookinfo-ingress.sh
